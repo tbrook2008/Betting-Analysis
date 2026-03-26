@@ -15,6 +15,7 @@ import pandas as pd
 
 import config
 from utils.cache import cached
+from utils.http import retry
 from utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -47,6 +48,7 @@ HEADERS = {
 }
 
 
+@retry(max_retries=2)
 @cached(ttl=config.CACHE_TTL_LINES, key_prefix="draftkings_mlb")
 def get_draftkings_lines() -> pd.DataFrame:
     """

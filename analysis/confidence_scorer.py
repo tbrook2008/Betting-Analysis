@@ -142,14 +142,19 @@ def score(
 
     # If we have a projected value vs line, blend that in
     if projected_value is not None and line is not None and line > 0:
-        proj_direction = 1.0 if projected_value > line else -1.0
-        diff_pct = abs(projected_value - line) / line
-        proj_boost = proj_direction * min(diff_pct * 100, 15.0)  # max ±15 pts
-        raw_score = raw_score * 0.8 + (50.0 + proj_boost * 5) * 0.2
+        # Logistic-style boost: larger discrepancies provide diminishing returns
+        diff_pct = (projected_value - line) / line
+        # Map diff_pct to a boost in [-1, 1]
+        # e.g. 20% diff -> ~0.5 boost
+        proj_boost = float(np.tanh(diff_pct * 3.0)) 
+        
+        # Blend: 70% signal-based, 30% projection-based
+        raw_score = raw_score * 0.7 + (50.0 + proj_boost * 50.0) * 0.3
+        
+        direction_label = "over" if diff_pct > 0 else "under"
         reasoning.append(
             f"📊 Projected {projected_value:.2f} vs line {line:.1f} "
-            f"({'over' if proj_direction > 0 else 'under'} by "
-            f"{abs(projected_value - line):.2f})"
+            f"({direction_label} by {abs(diff_pct)*100:.1f}%)"
         )
 
     # Apply confidence cap

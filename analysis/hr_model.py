@@ -55,9 +55,10 @@ def generate_hr_signals(
     sc_summary = mlb.get_statcast_batter_stats(player_name)
     sc_detail = mlb.get_statcast_batter_detail(player_name)
 
-    # Prefer detail (pitch-by-pitch) over summary for fly ball %
-    barrel_pct = sc_detail.get("barrel_pct") or sc_summary.get("barrel_pct", 0.0)
-    hard_hit_pct = sc_detail.get("hard_hit_pct") or sc_summary.get("hard_hit_pct", 0.0)
+    # Prefer summary (season-wide stats) over detail (recent sample) for stable rates
+    barrel_pct = sc_summary.get("barrel_pct") or sc_detail.get("barrel_pct", 0.0)
+    hard_hit_pct = sc_summary.get("hard_hit_pct") or sc_detail.get("hard_hit_pct", 0.0)
+    # Fly ball % is only in detail view (pitch-by-pitch)
     fly_ball_pct = sc_detail.get("fly_ball_pct", 0.0)
 
     if barrel_pct:

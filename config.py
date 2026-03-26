@@ -26,6 +26,9 @@ ODDS_API_BASE = "https://api.the-odds-api.com/v4"
 PRIZEPICKS_API_BASE = "https://partner-api.prizepicks.com"
 PRIZEPICKS_MLB_LEAGUE_ID = "2"  # MLB league id on PrizePicks
 
+OWM_API_KEY: str = os.getenv("OWM_API_KEY", "")
+OWM_API_BASE = "https://api.openweathermap.org/data/2.5"
+
 # ─────────────────────────────────────────────────────────────────────────────
 # FastAPI
 # ─────────────────────────────────────────────────────────────────────────────

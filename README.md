@@ -59,16 +59,26 @@ Full interactive docs at **http://localhost:8000/docs**
 
 ---
 
+| Source | What it provides | Key needed? |
+|---|---|---|
+| MLB Stats API (`statsapi`) | Schedule, game logs, season stats, splits | ❌ Free |
+| Statcast via `pybaseball` | Barrel%, hard hit%, xFIP, whiff rate, K% | ❌ Free |
+| PrizePicks Partner API | Player prop lines | ❌ Free (semi-public) |
+| The Odds API | DraftKings player prop lines + American odds | ✅ `ODDS_API_KEY` |
+| OpenWeatherMap | Live wind speed/direction for HR boost | 🟢 `OWM_API_KEY` (Optional) |
+
+---
+
 ## Project Structure
 
 ```
 Betting Analysis/
-├── config.py              # All tunable weights, thresholds, park factors
+├── config.py              # Tunable weights, thresholds, park factors
 ├── main.py                # CLI entry point
 ├── scheduler.py           # APScheduler daily runner
 │
 ├── data/
-│   ├── mlb_client.py      # MLB Stats API + pybaseball/Statcast wrappers
+│   ├── mlb_client.py      # MLB Stats API + Statcast wrappers
 │   ├── prizepicks_scraper.py
 │   └── draftkings_scraper.py
 │
@@ -89,22 +99,15 @@ Betting Analysis/
 │
 ├── utils/
 │   ├── logger.py          # Rich logger
-│   └── cache.py           # diskcache decorator
+│   ├── cache.py           # diskcache decorator
+│   └── http.py            # HTTP client with retry logic
+│
+├── tests/                 # Pytest suite
+│   └── test_confidence_scorer.py
 │
 ├── output/                # JSON pick files written here
-└── .cache/                # diskcache directory
+└── .cache/                # diskcache directory (ignored)
 ```
-
----
-
-## Data Sources
-
-| Source | What it provides | Key needed? |
-|---|---|---|
-| MLB Stats API (`statsapi`) | Schedule, game logs, season stats, splits | ❌ Free |
-| Statcast via `pybaseball` | Barrel%, hard hit%, xFIP, whiff rate, K% | ❌ Free |
-| PrizePicks Partner API | Player prop lines | ❌ Free (semi-public) |
-| The Odds API | DraftKings player prop lines + American odds | ✅ Free tier at [the-odds-api.com](https://the-odds-api.com) |
 
 ---
 

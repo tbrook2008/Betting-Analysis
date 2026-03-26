@@ -39,7 +39,7 @@ router = APIRouter()
 def health():
     return {
         "status": "ok",
-        "timestamp": datetime.datetime.utcnow().isoformat(),
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "version": "1.0.0",
     }
 
@@ -116,7 +116,7 @@ def get_parlays(
     parlays = build_parlays(picks, top_n_power=top_n, top_n_flex=top_n, max_legs=max_legs)
 
     return {
-        "generated_at": datetime.datetime.utcnow().isoformat(),
+        "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "picks_pool_size": len(picks),
         "power_plays": [p.to_dict() for p in parlays["power_plays"]],
         "flex_plays": [p.to_dict() for p in parlays["flex_plays"]],

@@ -64,11 +64,23 @@ def get_schedule(date: datetime.date | str | None = None) -> list[dict]:
 
 @cached(ttl=config.CACHE_TTL_SCHEDULE, key_prefix="player_lookup")
 def get_player_id(name: str) -> Optional[int]:
-    """Look up MLB player ID by full name. Returns None if not found."""
+    """
+    Look up MLB player ID by full name. 
+    Improved to prefer ACTIVE players and handle common name ambiguity.
+    """
     results = statsapi.lookup_player(name)
     if not results:
         log.warning(f"Player not found: {name}")
         return None
+    
+    # If multiple results, primary check: find the active one
+    active = [p for p in results if p.get("active", False)]
+    if active:
+        if len(active) > 1:
+            log.info(f"Multiple active players found for '{name}', using first matching ID: {active[0]['id']}")
+        return active[0]["id"]
+    
+    # Fallback to the first result regardless of activity status
     return results[0]["id"]
 
 
@@ -209,47 +221,82 @@ def get_batter_splits(player_id: int) -> dict[str, dict]:
 # Statcast — Batter
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _season_date_range(lookback_days: int = 90) -> tuple[str, str]:
+def _season_date_range(lookback_days: int = 60) -> tuple[str, str]:
+    """
+    Return a date range for Statcast lookups. 
+    If today is before April 1st, look back into the previous season.
+    """
     end = datetime.date.today()
     start = end - datetime.timedelta(days=lookback_days)
-    # Don't go before March 20 of current year (earliest Opening Day)
-    season_start = datetime.date(end.year, 3, 20)
-    start = max(start, season_start)
+    
+    # If early in the season (before April 15), ensure we include end of last season
+    if end.month < 4 or (end.month == 4 and end.day < 15):
+        # Look back from Oct 1st of previous year
+        prev_year = end.year - 1
+        start = datetime.date(prev_year, 8, 1)
+        # If we are in the off-season, 'end' should be the end of the previous season
+        if end.month < 3:
+             end = datetime.date(prev_year, 11, 1)
+             
     return start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")
 
 
 @cached(ttl=config.CACHE_TTL_STATCAST, key_prefix="statcast_batter")
-def get_statcast_batter_stats(player_name: str, lookback_days: int = 60) -> dict:
+def get_statcast_batter_stats(player_name: str) -> dict:
     """
     Return aggregated Statcast metrics for a batter.
-
-    Returns dict with: barrel_pct, hard_hit_pct, fly_ball_pct,
-    avg_launch_angle, avg_exit_velocity, xba, xslg, k_pct, bb_pct, babip
+    Correctly merges Expected Stats and Exit Velocity data.
     """
-    start, end = _season_date_range(lookback_days)
-    try:
-        df = pb.statcast_batter_expected_stats(end.split("-")[0])
-        # Filter by player name (approximate match)
-        name_mask = df["last_name, first_name"].str.lower().str.contains(
-            _name_to_statcast(player_name), na=False
-        )
-        player_df = df[name_mask]
-        if player_df.empty:
-            log.warning(f"Statcast batter not found for: {player_name}")
-            return {}
-        row = player_df.iloc[0]
-        return {
-            "barrel_pct": float(row.get("barrel_batted_rate", 0) or 0),
-            "hard_hit_pct": float(row.get("hard_hit_percent", 0) or 0),
-            "avg_exit_velocity": float(row.get("avg_hit_speed", 0) or 0),
-            "xba": float(row.get("xba", 0) or 0),
-            "xslg": float(row.get("xslg", 0) or 0),
-            "k_pct": float(row.get("strikeout", 0) or 0),
-            "bb_pct": float(row.get("walk", 0) or 0),
-        }
-    except Exception as exc:
-        log.error(f"Statcast batter fetch failed for {player_name}: {exc}")
-        return {}
+    current_year = datetime.date.today().year
+    sc_name = _name_to_statcast(player_name)
+    
+    for year in [current_year, current_year - 1]:
+        try:
+            # 1. Expected Stats (xBA, xSLG, PA)
+            x_df = pb.statcast_batter_expected_stats(year)
+            if x_df.empty:
+                continue
+                
+            x_mask = x_df["last_name, first_name"].str.lower().str.contains(sc_name, na=False)
+            x_player = x_df[x_mask]
+            if x_player.empty:
+                continue
+                
+            x_row = x_player.iloc[0]
+            pa = int(x_row.get("pa", 0) or 0)
+            
+            # Sample size check
+            if year == current_year and pa < 50:
+                log.debug(f"Low sample size for {player_name} in {year} ({pa} PA), falling back.")
+                continue
+
+            # 2. Exit Velo & Barrels (Barrel%, HardHit%, EV)
+            ev_df = pb.statcast_batter_exitvelo_barrels(year)
+            ev_mask = ev_df["last_name, first_name"].str.lower().str.contains(sc_name, na=False)
+            ev_player = ev_df[ev_mask]
+            
+            result = {
+                "xba": float(x_row.get("est_ba", 0) or 0),
+                "xslg": float(x_row.get("est_slg", 0) or 0),
+                "pa": pa,
+                "data_year": year
+            }
+            
+            if not ev_player.empty:
+                ev_row = ev_player.iloc[0]
+                result.update({
+                    "barrel_pct": float(ev_row.get("brl_percent", 0) or 0),
+                    "hard_hit_pct": float(ev_row.get("ev95percent", 0) or 0),
+                    "avg_exit_velocity": float(ev_row.get("avg_hit_speed", 0) or 0),
+                })
+                
+            return result
+        except Exception as exc:
+            log.debug(f"Statcast batter fetch failed for {player_name} in {year}: {exc}")
+            continue
+            
+    log.warning(f"Statcast batter not found for: {player_name}")
+    return {}
 
 
 @cached(ttl=config.CACHE_TTL_STATCAST, key_prefix="statcast_batter_detail")
@@ -269,18 +316,24 @@ def get_statcast_batter_detail(player_name: str, lookback_days: int = 60) -> dic
         if df.empty:
             return {}
 
-        total = len(df)
-        fly_balls = df[df["bb_type"] == "fly_ball"]
-        barrels = df[df["launch_speed_angle"] == 6]  # 6 = barrel zone
-        hard_hit = df[df["launch_speed"] >= 95]
+        # Batted Ball Events (BBE) — ignore non-batted pitches
+        df_bbe = df.dropna(subset=['launch_speed', 'launch_angle'])
+        total_bbe = len(df_bbe)
+        
+        if not total_bbe:
+            return {}
+
+        fly_balls = df_bbe[df_bbe["bb_type"] == "fly_ball"]
+        barrels = df_bbe[df_bbe["launch_speed_angle"] == 6]  # 6 = barrel zone
+        hard_hit = df_bbe[df_bbe["launch_speed"] >= 95]
 
         return {
-            "fly_ball_pct": float(f"{len(fly_balls) / total * 100:.1f}") if total else 0.0,
-            "barrel_pct": float(f"{len(barrels) / total * 100:.1f}") if total else 0.0,
-            "hard_hit_pct": float(f"{len(hard_hit) / total * 100:.1f}") if total else 0.0,
-            "avg_exit_velocity": float(f'{df["launch_speed"].dropna().mean():.1f}') if not df.empty else 0.0,
-            "avg_launch_angle": float(f'{df["launch_angle"].dropna().mean():.1f}') if not df.empty else 0.0,
-            "pa_count": total,
+            "fly_ball_pct": float(f"{len(fly_balls) / total_bbe * 100:.1f}"),
+            "barrel_pct": float(f"{len(barrels) / total_bbe * 100:.1f}"),
+            "hard_hit_pct": float(f"{len(hard_hit) / total_bbe * 100:.1f}"),
+            "avg_exit_velocity": float(f'{df_bbe["launch_speed"].mean():.1f}'),
+            "avg_launch_angle": float(f'{df_bbe["launch_angle"].mean():.1f}'),
+            "bbe_count": total_bbe,
         }
     except Exception as exc:
         log.error(f"Statcast batter detail failed for {player_name}: {exc}")
@@ -292,46 +345,75 @@ def get_statcast_batter_detail(player_name: str, lookback_days: int = 60) -> dic
 # ─────────────────────────────────────────────────────────────────────────────
 
 @cached(ttl=config.CACHE_TTL_STATCAST, key_prefix="statcast_pitcher")
-def get_statcast_pitcher_stats(player_name: str, lookback_days: int = 60) -> dict:
+def get_statcast_pitcher_stats(player_name: str) -> dict:
     """
     Return aggregated Statcast + FanGraphs metrics for a pitcher.
-
-    Returns dict with: k_pct, bb_pct, xfip, whiff_rate, k_per_9, hr_per_9
+    Correctly merges multiple data sources and handles fallbacks.
     """
-    season = datetime.date.today().year
-    try:
-        # FanGraphs pitcher leaderboard for xFIP, K%, K/9
-        fg = pb.pitching_stats(season, season, qual=1)
-        name_mask = fg["Name"].str.lower().str.contains(
-            player_name.lower().split()[-1], na=False
-        )
-        player_fg = fg[name_mask]
+    current_year = datetime.date.today().year
+    sc_name = _name_to_statcast(player_name)
+    result: dict = {}
+    
+    for year in [current_year, current_year - 1]:
+        try:
+            # 1. FanGraphs (K%, xFIP, IP)
+            fg = pb.pitching_stats(year, year, qual=1)
+            if not fg.empty:
+                name_mask = fg["Name"].str.lower().str.contains(
+                    player_name.lower().split()[-1], na=False
+                )
+                player_fg = fg[name_mask]
+                if not player_fg.empty:
+                    r = player_fg.iloc[0]
+                    ip = float(r.get("IP", 0) or 0)
+                    
+                    # Sample size check
+                    if year == current_year and ip < 15:
+                        log.debug(f"Low sample size for {player_name} in {year} ({ip} IP), falling back.")
+                        continue
 
-        result: dict = {}
-        if not player_fg.empty:
-            r = player_fg.iloc[0]
-            result["k_pct"] = float(r.get("K%", 0) or 0) * 100
-            result["bb_pct"] = float(r.get("BB%", 0) or 0) * 100
-            result["xfip"] = float(r.get("xFIP", 4.5) or 4.5)
-            result["k_per_9"] = float(r.get("K/9", 0) or 0)
-            result["whiff_rate"] = float(r.get("SwStr%", 0) or 0) * 100
-            result["hr_per_9"] = float(r.get("HR/9", 0) or 0)
+                    result.update({
+                        "k_pct": float(r.get("K%", 0) or 0) * 100,
+                        "bb_pct": float(r.get("BB%", 0) or 0) * 100,
+                        "xfip": float(r.get("xFIP", 4.5) or 4.5),
+                        "k_per_9": float(r.get("K/9", 0) or 0),
+                        "whiff_rate": float(r.get("SwStr%", 0) or 0) * 100,
+                        "hr_per_9": float(r.get("HR/9", 0) or 0),
+                        "data_year_fg": year
+                    })
 
-        # Supplement with Statcast expected stats
-        sc = pb.statcast_pitcher_expected_stats(season)
-        sc_mask = sc["last_name, first_name"].str.lower().str.contains(
-            _name_to_statcast(player_name), na=False
-        )
-        player_sc = sc[sc_mask]
-        if not player_sc.empty:
-            r2 = player_sc.iloc[0]
-            result["xba_against"] = float(r2.get("xba", 0) or 0)
-            result["xslg_against"] = float(r2.get("xslg", 0) or 0)
+            # 2. Statcast Expected Stats (xBA against)
+            sc = pb.statcast_pitcher_expected_stats(year)
+            if not sc.empty:
+                sc_mask = sc["last_name, first_name"].str.lower().str.contains(sc_name, na=False)
+                player_sc = sc[sc_mask]
+                if not player_sc.empty:
+                    r2 = player_sc.iloc[0]
+                    result.update({
+                        "xba_against": float(r2.get("est_ba", 0) or 0),
+                        "xslg_against": float(r2.get("est_slg", 0) or 0),
+                        "data_year_sc": year
+                    })
+            
+            # 3. Statcast Exit Velo against (Barrel%)
+            ev = pb.statcast_pitcher_exitvelo_barrels(year)
+            if not ev.empty:
+                ev_mask = ev["last_name, first_name"].str.lower().str.contains(sc_name, na=False)
+                player_ev = ev[ev_mask]
+                if not player_ev.empty:
+                    r3 = player_ev.iloc[0]
+                    result.update({
+                        "barrel_pct_against": float(r3.get("brl_percent", 0) or 0),
+                        "hard_hit_pct_against": float(r3.get("ev95percent", 0) or 0),
+                    })
 
-        return result
-    except Exception as exc:
-        log.error(f"Statcast pitcher fetch failed for {player_name}: {exc}")
-        return {}
+            if result:
+                return result
+        except Exception as exc:
+            log.debug(f"Statcast pitcher fetch failed for {player_name} in {year}: {exc}")
+            continue
+
+    return result
 
 
 @cached(ttl=config.CACHE_TTL_STATCAST, key_prefix="team_k_rate")
