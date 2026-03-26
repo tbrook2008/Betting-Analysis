@@ -53,12 +53,17 @@ def generate_hr_signals(
 
     # ── 2. Statcast batter — barrel%, hard hit%, fly ball% ───────────────────
     sc_summary = mlb.get_statcast_batter_stats(player_name)
-    sc_detail = mlb.get_statcast_batter_detail(player_name)
+    
+    # Lazily fetch detail only if we need it (e.g. for Fly Ball% or if summary is missing)
+    sc_detail = {}
+    if not sc_summary or "barrel_pct" not in sc_summary:
+        sc_detail = mlb.get_statcast_batter_detail(player_name)
 
     # Prefer summary (season-wide stats) over detail (recent sample) for stable rates
     barrel_pct = sc_summary.get("barrel_pct") or sc_detail.get("barrel_pct", 0.0)
     hard_hit_pct = sc_summary.get("hard_hit_pct") or sc_detail.get("hard_hit_pct", 0.0)
-    # Fly ball % is only in detail view (pitch-by-pitch)
+    
+    # Fly ball % logic: use detail if summary is missing it
     fly_ball_pct = sc_detail.get("fly_ball_pct", 0.0)
 
     if barrel_pct:

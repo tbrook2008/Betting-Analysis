@@ -130,16 +130,24 @@ def generate_daily_picks(
 
     log.info(f"Processing {len(all_lines)} total prop lines")
 
-    # ── 3. Score each line ───────────────────────────────────────────────────
+    # ── 3. Score each line (Parallelized) ────────────────────────────────────
+    import os
+    from concurrent.futures import ThreadPoolExecutor
     picks: list[PickResult] = []
 
-    for line_row in all_lines:
+    def _safe_score(line_row: dict) -> PickResult | None:
         try:
-            pick = _score_line(line_row, game_ctx)
-            if pick and pick.recommendation != "NO PLAY" and pick.confidence >= min_confidence:
-                picks.append(pick)
+            return _score_line(line_row, game_ctx)
         except Exception as exc:
             log.debug(f"Skipped line for {line_row.get('player_name', '?')}: {exc}")
+            return None
+
+    with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as executor:
+        results = list(executor.map(_safe_score, all_lines))
+
+    for pick in results:
+        if pick and pick.recommendation != "NO PLAY" and pick.confidence >= min_confidence:
+            picks.append(pick)
 
     # ── 4. Sort by confidence descending ─────────────────────────────────────
     picks.sort(key=lambda p: p.confidence, reverse=True)

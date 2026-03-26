@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import datetime
 from typing import Optional
+from functools import lru_cache
 
 import pandas as pd
+import numpy as np
 import statsapi
 import pybaseball as pb
 
@@ -21,6 +23,31 @@ log = get_logger(__name__)
 
 # Silence pybaseball's progress bar
 pb.cache.enable()
+
+# ── League-wide Data Caching (to avoid re-parsing massive CSVs in loops) ───
+@lru_cache(maxsize=1) # Cache 1 year at a time for each position
+def _get_league_expected_stats(year: int, pos: str = "batter") -> pd.DataFrame:
+    log.debug(f"Fetching league-wide expected stats for {pos} in {year}")
+    if pos == "pitcher":
+        return pb.statcast_pitcher_expected_stats(year)
+    return pb.statcast_batter_expected_stats(year)
+
+@lru_cache(maxsize=1)
+def _get_league_exit_velo(year: int, pos: str = "batter") -> pd.DataFrame:
+    log.debug(f"Fetching league-wide exit velo/barrels for {pos} in {year}")
+    if pos == "pitcher":
+        return pb.statcast_pitcher_exitvelo_barrels(year)
+    return pb.statcast_batter_exitvelo_barrels(year)
+
+@lru_cache(maxsize=1)
+def _get_league_batting_stats(year: int) -> pd.DataFrame:
+    log.debug(f"Fetching league-wide batting stats for {year}")
+    return pb.batting_stats(year, year, qual=1)
+
+@lru_cache(maxsize=1)
+def _get_league_pitching_stats(year: int) -> pd.DataFrame:
+    log.debug(f"Fetching league-wide pitching stats for {year}")
+    return pb.pitching_stats(year, year, qual=1)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -244,8 +271,7 @@ def _season_date_range(lookback_days: int = 60) -> tuple[str, str]:
 @cached(ttl=config.CACHE_TTL_STATCAST, key_prefix="statcast_batter")
 def get_statcast_batter_stats(player_name: str) -> dict:
     """
-    Return aggregated Statcast metrics for a batter.
-    Correctly merges Expected Stats and Exit Velocity data.
+    Return aggregated Statcast metrics for a batter using memoized league-wide data.
     """
     current_year = datetime.date.today().year
     sc_name = _name_to_statcast(player_name)
@@ -253,10 +279,10 @@ def get_statcast_batter_stats(player_name: str) -> dict:
     for year in [current_year, current_year - 1]:
         try:
             # 1. Expected Stats (xBA, xSLG, PA)
-            x_df = pb.statcast_batter_expected_stats(year)
+            x_df = _get_league_expected_stats(year, "batter")
             if x_df.empty:
                 continue
-                
+            
             x_mask = x_df["last_name, first_name"].str.lower().str.contains(sc_name, na=False)
             x_player = x_df[x_mask]
             if x_player.empty:
@@ -270,14 +296,15 @@ def get_statcast_batter_stats(player_name: str) -> dict:
                 log.debug(f"Low sample size for {player_name} in {year} ({pa} PA), falling back.")
                 continue
 
-            # 2. Exit Velo & Barrels (Barrel%, HardHit%, EV)
-            ev_df = pb.statcast_batter_exitvelo_barrels(year)
+            # 2. Exit Velo & Barrels
+            ev_df = _get_league_exit_velo(year, "batter")
             ev_mask = ev_df["last_name, first_name"].str.lower().str.contains(sc_name, na=False)
             ev_player = ev_df[ev_mask]
             
             result = {
                 "xba": float(x_row.get("est_ba", 0) or 0),
                 "xslg": float(x_row.get("est_slg", 0) or 0),
+                "xwoba": float(x_row.get("est_woba", 0) or 0),
                 "pa": pa,
                 "data_year": year
             }
@@ -300,31 +327,34 @@ def get_statcast_batter_stats(player_name: str) -> dict:
 
 
 @cached(ttl=config.CACHE_TTL_STATCAST, key_prefix="statcast_batter_detail")
-def get_statcast_batter_detail(player_name: str, lookback_days: int = 60) -> dict:
+def get_statcast_batter_detail(player_name: str, lookback_days: int = 30) -> dict:
     """
-    Fetch raw Statcast pitch-by-pitch and compute fly ball %, barrel %, etc.
+    Fetch raw Statcast pitch-by-pitch and compute fly ball %, etc.
+    CRITICAL: This is slow. Used only as a fallback for specific metrics (Fly Ball%).
     """
-    start, end = _season_date_range(lookback_days)
+    end = datetime.date.today()
+    start = end - datetime.timedelta(days=lookback_days)
+    
+    if end.month < 3:
+        start = datetime.date(end.year - 1, 9, 1)
+        end = datetime.date(end.year - 1, 10, 5)
+
     try:
-        # Look up player_id via pybaseball
         lookup = pb.playerid_lookup(*_split_name(player_name))
         if lookup.empty:
-            log.warning(f"pybaseball lookup failed for {player_name}")
             return {}
         mlbam_id = int(lookup.iloc[0]["key_mlbam"])
         df = pb.statcast_batter(start, end, player_id=mlbam_id)
         if df.empty:
             return {}
 
-        # Batted Ball Events (BBE) — ignore non-batted pitches
         df_bbe = df.dropna(subset=['launch_speed', 'launch_angle'])
         total_bbe = len(df_bbe)
-        
         if not total_bbe:
             return {}
 
         fly_balls = df_bbe[df_bbe["bb_type"] == "fly_ball"]
-        barrels = df_bbe[df_bbe["launch_speed_angle"] == 6]  # 6 = barrel zone
+        barrels = df_bbe[df_bbe["launch_speed_angle"] == 6]
         hard_hit = df_bbe[df_bbe["launch_speed"] >= 95]
 
         return {
@@ -332,11 +362,10 @@ def get_statcast_batter_detail(player_name: str, lookback_days: int = 60) -> dic
             "barrel_pct": float(f"{len(barrels) / total_bbe * 100:.1f}"),
             "hard_hit_pct": float(f"{len(hard_hit) / total_bbe * 100:.1f}"),
             "avg_exit_velocity": float(f'{df_bbe["launch_speed"].mean():.1f}'),
-            "avg_launch_angle": float(f'{df_bbe["launch_angle"].mean():.1f}'),
             "bbe_count": total_bbe,
         }
     except Exception as exc:
-        log.error(f"Statcast batter detail failed for {player_name}: {exc}")
+        log.debug(f"Statcast detail failed for {player_name}: {exc}")
         return {}
 
 
@@ -347,27 +376,24 @@ def get_statcast_batter_detail(player_name: str, lookback_days: int = 60) -> dic
 @cached(ttl=config.CACHE_TTL_STATCAST, key_prefix="statcast_pitcher")
 def get_statcast_pitcher_stats(player_name: str) -> dict:
     """
-    Return aggregated Statcast + FanGraphs metrics for a pitcher.
-    Correctly merges multiple data sources and handles fallbacks.
+    Return aggregated Statcast + FanGraphs metrics for a pitcher using league caching.
     """
     current_year = datetime.date.today().year
     sc_name = _name_to_statcast(player_name)
-    result: dict = {}
     
     for year in [current_year, current_year - 1]:
         try:
-            # 1. FanGraphs (K%, xFIP, IP)
-            fg = pb.pitching_stats(year, year, qual=1)
+            result = {}
+            # 1. FanGraphs Pitching Leaderboard (K%, xFIP)
+            fg = _get_league_pitching_stats(year)
             if not fg.empty:
-                name_mask = fg["Name"].str.lower().str.contains(
-                    player_name.lower().split()[-1], na=False
-                )
-                player_fg = fg[name_mask]
+                # Use split name for more flexible match
+                last_name = player_name.lower().split()[-1]
+                fg_mask = fg["Name"].str.lower().str.contains(last_name, na=False)
+                player_fg = fg[fg_mask]
                 if not player_fg.empty:
                     r = player_fg.iloc[0]
                     ip = float(r.get("IP", 0) or 0)
-                    
-                    # Sample size check
                     if year == current_year and ip < 15:
                         log.debug(f"Low sample size for {player_name} in {year} ({ip} IP), falling back.")
                         continue
@@ -383,7 +409,7 @@ def get_statcast_pitcher_stats(player_name: str) -> dict:
                     })
 
             # 2. Statcast Expected Stats (xBA against)
-            sc = pb.statcast_pitcher_expected_stats(year)
+            sc = _get_league_expected_stats(year, "pitcher")
             if not sc.empty:
                 sc_mask = sc["last_name, first_name"].str.lower().str.contains(sc_name, na=False)
                 player_sc = sc[sc_mask]
@@ -396,7 +422,7 @@ def get_statcast_pitcher_stats(player_name: str) -> dict:
                     })
             
             # 3. Statcast Exit Velo against (Barrel%)
-            ev = pb.statcast_pitcher_exitvelo_barrels(year)
+            ev = _get_league_exit_velo(year, "pitcher")
             if not ev.empty:
                 ev_mask = ev["last_name, first_name"].str.lower().str.contains(sc_name, na=False)
                 player_ev = ev[ev_mask]
@@ -419,12 +445,12 @@ def get_statcast_pitcher_stats(player_name: str) -> dict:
 @cached(ttl=config.CACHE_TTL_STATCAST, key_prefix="team_k_rate")
 def get_team_strikeout_rate(team_abbrev: str, lookback_days: int = 14) -> float:
     """
-    Return a team's K% over the last N days using FanGraphs batting leaderboard.
-    Returns 0.0 if not available.
+    Return a team's K% over the current season using memoized league-wide data.
     """
     season = datetime.date.today().year
     try:
-        df = pb.batting_stats(season, season, qual=1)
+        # Use our memoized league data instead of downloading fresh every time
+        df = _get_league_batting_stats(season)
         team_df = df[df["Team"].str.upper() == team_abbrev.upper()]
         if team_df.empty:
             return 0.0

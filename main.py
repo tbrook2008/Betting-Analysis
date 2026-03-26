@@ -88,6 +88,17 @@ def cmd_run(args: argparse.Namespace) -> None:
             legs = " | ".join(f"{l.player_name} {l.recommendation}" for l in fp.legs)
             console.print(f"  {i}. [{fp.num_legs}-leg, conf={fp.avg_confidence:.0f}] {legs}")
 
+    # ── AI Validation ────────────────────────────────────────────────────────
+    ai_analysis = None
+    high_conf_picks = [p.to_dict() for p in picks if p.confidence >= 75]
+    if high_conf_picks:
+        from utils.gemini_client import vet_top_picks
+        with console.status("Querying Gemini AI for expert validation…"):
+            ai_analysis = vet_top_picks(high_conf_picks)
+        
+        console.print("\n[bold green]🤖 AI Expert Analysis[/]")
+        console.print(f"{ai_analysis}\n")
+
     # ── Write JSON output ────────────────────────────────────────────────────
     today = date or datetime.date.today()
     out_path = Path("output") / f"picks_{today.isoformat()}.json"
@@ -96,6 +107,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         "generated_at": datetime.datetime.utcnow().isoformat(),
         "date": today.isoformat(),
         "picks_count": len(picks),
+        "ai_analysis": ai_analysis,
         "picks": [p.to_dict() for p in picks],
         "parlays": {
             "power_plays": [p.to_dict() for p in parlays["power_plays"]],
