@@ -35,6 +35,13 @@ def cmd_run(args: argparse.Namespace) -> None:
     from picks.pick_generator import generate_daily_picks
     from picks.parlay_builder import build_parlays
 
+    # 🔍 Autonomous Learning Loop (First run of the day)
+    from analysis.teacher import Teacher
+    teacher = Teacher()
+    if args.date == "today" and teacher.is_first_run_today():
+        console.print("[bold yellow]🧠 First run today! AI is teaching itself from yesterday's results...[/]")
+        teacher.run_daily_retro()
+
     date = None
     if args.date and args.date.lower() != "today":
         date = datetime.date.fromisoformat(args.date)
@@ -138,6 +145,12 @@ def cmd_schedule(args: argparse.Namespace) -> None:
 # Argument Parsing
 # ─────────────────────────────────────────────────────────────────────────────
 
+def cmd_reset_learning(args: argparse.Namespace) -> None:
+    """Wipe the AI's multipliers back to baseline."""
+    from analysis.teacher import Teacher
+    Teacher().reset_learning()
+    console.print("[bold green]✅ AI learning history and multipliers have been reset.[/]")
+
 def _parse_sources(source: str | None) -> list[str] | None:
     if not source:
         return None
@@ -176,9 +189,9 @@ def build_parser() -> argparse.ArgumentParser:
     serve_p.add_argument("--port", type=int, default=8000)
     serve_p.set_defaults(func=cmd_serve)
 
-    # schedule
-    sched_p = sub.add_parser("schedule", help="Start APScheduler daemon")
-    sched_p.set_defaults(func=cmd_schedule)
+    # reset-learning
+    reset_p = sub.add_parser("reset-learning", help="Wipe AI weights and learning history")
+    reset_p.set_defaults(func=cmd_reset_learning)
 
     return parser
 

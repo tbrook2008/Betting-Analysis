@@ -38,6 +38,7 @@ python main.py serve
 | `python main.py serve` | Start FastAPI on port 8000 |
 | `python main.py serve --port 8080` | Custom port |
 | `python main.py schedule` | Start daily auto-run daemon (11 AM ET) |
+| `python main.py reset-learning` | Wipe AI multipliers and reset learning history |
 
 ---
 
@@ -83,6 +84,7 @@ Betting Analysis/
 │   └── draftkings_scraper.py
 │
 ├── analysis/
+│   ├── teacher.py         # 🧠 The Brain: Autonomous daily learning
 │   ├── hits_model.py      # Hits / Total Bases signals
 │   ├── hr_model.py        # Home Run signals
 │   ├── pitcher_model.py   # Pitcher Strikeout signals
@@ -122,6 +124,18 @@ Each prop runs through a **signal → normalize → weight → score** pipeline:
 5. Score ≥ 55 → **OVER**; Score ≤ 45 → **UNDER**; else **NO PLAY**
 
 Tweak weights anytime in `config.py` — no model code changes needed.
+
+---
+
+## Autonomous Learning 🤖
+
+The system features a **Self-Teaching Loop** that triggers on the first run of each day:
+
+1. **Daily Retrospective**: The `Teacher` module scrapes yesterday's final box scores from the MLB Stats API.
+2. **Accuracy Grading**: It compares our picks against actual results to calculate a performance grade.
+3. **Weight Tuning**: If a model (e.g., Pitcher K's) is performing well, the AI automatically applies a **Dynamic Multiplier** (capped at ±10%) to today's confidence scores.
+
+View the AI's current memory and multipliers in `data/dynamic_weights.json`.
 
 ---
 

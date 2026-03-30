@@ -15,7 +15,11 @@ import numpy as np
 import config
 from utils.logger import get_logger
 
+from analysis.teacher import get_multipliers
 log = get_logger(__name__)
+
+# Load learned multipliers (Auto-tuned by Teacher)
+DYNAMIC_MULTIPLIERS = get_multipliers()
 
 PropType = Literal["hits", "total_bases", "home_runs", "pitcher_ks", "game_total"]
 Recommendation = Literal["OVER", "UNDER", "NO PLAY"]
@@ -60,7 +64,8 @@ _SIGNAL_RANGES: dict[str, tuple[float, float, bool]] = {
     "fly_ball_pct":        (15.0,  55.0,  False),
     "opp_hr_per_9":        (0.5,   2.5,   False),
     "wind_boost":          (-0.15, 0.15,  False),
-    "hr_rate_30d":         (0.0,   10.0,  False),
+    "hr_rate_30d":         (0.0,   12.0,  False),   # Max ~3HR in 25 AB
+    "hr_rate_15d":         (0.0,   15.0,  False),   # More sensitive to surges
     "k_per_9":             (4.0,   14.0,  False),
     "k_pct":               (10.0,  40.0,  False),
     "whiff_rate":          (15.0,  45.0,  False),
@@ -159,6 +164,48 @@ def score(
 
     # Apply confidence cap
     raw_score = float(np.clip(raw_score, 100 - config.MAX_CONFIDENCE, config.MAX_CONFIDENCE))
+
+    # ── [NEW] Stability & Variance Scaling ──────────────────────────────────
+    # Apply multiplier to distance from 50 (neutral) based on prop variance
+    variance_factor = config.PROP_VARIANCE_FACTORS.get(prop_type, 1.0)
+    if variance_factor < 1.0:
+        dist = raw_score - 50.0
+        raw_score = 50.0 + (dist * variance_factor)
+        reasoning.append(f"⚠️ Applied {int((1-variance_factor)*100)}% variance penalty for {prop_type}")
+
+    # Apply specialized "Safe Money" Learning Bonus
+    stability = config.STABILITY_THRESHOLDS
+    
+    # 1. Pitcher K-rate "Gold Standard"
+    if prop_type == "pitcher_ks":
+        k_pct = float(signals.get("k_pct", 0))
+        if k_pct >= (stability.get("pitcher_k_pct_min", 0.30) * 100):
+            raw_score += 5
+            reasoning.append(f"🏆 Gold Standard: Elite {k_pct}% strikeout rate")
+            
+    # 2. Hitter 0.5 Line "Safety"
+    if prop_type in ["hits", "total_bases"]:
+        line_val = line if line is not None else 0
+        if line_val <= stability.get("hitter_line_max", 0.5):
+            raw_score += 3
+            reasoning.append("🛡️ Safety: Ultra-low 0.5 line (one hit clears)")
+
+    # Stability Check: Last 10 games
+    l10_hits = signals.get("last_10_hit_rate")
+    if l10_hits is not None:
+        direction_icon = "🔥" if l10_hits >= 0.7 else ("🧊" if l10_hits <= 0.3 else "📊")
+        reasoning.append(f"{direction_icon} Hit rate (L10): {int(l10_hits*100)}%")
+        # Slightly nudge score if very high/low stability
+        if l10_hits >= 0.8: raw_score += 2
+        if l10_hits <= 0.2: raw_score -= 2
+
+    # ── [NEW] Autonomous Learning Adjustment ────────────────────────────────
+    # Apply the multiplier learned by the Teacher from previous results
+    learned_m = DYNAMIC_MULTIPLIERS.get(prop_type, 1.0)
+    if learned_m != 1.0:
+        raw_score *= learned_m
+        reasoning.append(f"🤖 AI Learning: Multiplier {learned_m:.2f} applied")
+
     confidence = int(round(raw_score))
 
     # Determine recommendation

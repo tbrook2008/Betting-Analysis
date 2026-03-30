@@ -73,17 +73,26 @@ def generate_hr_signals(
     if fly_ball_pct:
         signals["fly_ball_pct"] = float(fly_ball_pct)
 
-    # ── 3. Recent HR trend from game logs ────────────────────────────────────
+    # ── 3. Recent HR trend and L10 Stability from game logs ──────────────────
     if player_id:
         logs = mlb.get_batter_game_logs(player_id, last_n=30)
         if not logs.empty:
+            # Power rates
             hr_last_30 = int(logs.tail(30)["HR"].sum())
-            hr_last_14 = int(logs.tail(14)["HR"].sum())
-            # Annualized rate proxy: HR / PA * 600
+            hr_last_15 = int(logs.tail(15)["HR"].sum())
             ab_30 = int(logs.tail(30)["AB"].sum())
+            ab_15 = int(logs.tail(15)["AB"].sum())
+            
             if ab_30 > 0:
-                hr_rate = hr_last_30 / ab_30
-                signals["hr_rate_30d"] = round(hr_rate * 100, 2)  # HR% of AB
+                signals["hr_rate_30d"] = round((hr_last_30 / ab_30) * 100, 2)
+            if ab_15 > 0:
+                signals["hr_rate_15d"] = round((hr_last_15 / ab_15) * 100, 2)
+
+            # Stability check (hit HR in ≥ 1 game out of last 10)
+            # For HRs, we define 'hit' as HR > 0
+            l10 = logs.tail(10)
+            hits_in_l10 = (l10["HR"] > 0).sum()
+            signals["last_10_hit_rate"] = float(hits_in_l10 / 10.0)
 
     # ── 4. Opposing pitcher HR/9 ─────────────────────────────────────────────
     if opp_pitcher_name:

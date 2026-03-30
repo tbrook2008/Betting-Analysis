@@ -63,12 +63,33 @@ HITS_WEIGHTS = {
 # Signal Weights — Home Run Model
 # ─────────────────────────────────────────────────────────────────────────────
 HR_WEIGHTS = {
-    "barrel_pct":          0.30,
-    "hard_hit_pct":        0.20,
+    "barrel_pct":          0.20,   # Reduced from 0.30
+    "hard_hit_pct":        0.15,   # Reduced from 0.20
+    "hr_rate_30d":         0.15,   # [NEW] Recency signal
+    "hr_rate_15d":         0.10,   # [NEW] Near-term surge
     "fly_ball_pct":        0.15,
-    "opp_hr_per_9":        0.20,
-    "park_hr_factor":      0.10,
+    "opp_hr_per_9":        0.15,   # Reduced from 0.20
+    "park_hr_factor":      0.05,
     "wind_boost":          0.05,
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Stability & "Safe Money" Thresholds (Learning from hits)
+# ─────────────────────────────────────────────────────────────────────────────
+STABILITY_THRESHOLDS = {
+    "pitcher_k_pct_min": 0.30,   # 30% K-rate is the "Gold Standard"
+    "hitter_line_max":   0.5,    # 0.5 lines are lowest variance (one hit)
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Variance & Reliability Scaling
+# ─────────────────────────────────────────────────────────────────────────────
+# Multipliers to discount confidence for high-variance events
+PROP_VARIANCE_FACTORS = {
+    "home_runs":   0.75,   # High variance, harder to predict day-to-day
+    "hits":        0.95,   # Lower variance
+    "total_bases": 0.90,
+    "pitcher_ks":  0.95,
 }
 
 # ─────────────────────────────────────────────────────────────────────────────

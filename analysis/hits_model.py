@@ -51,11 +51,17 @@ def generate_hits_signals(
     if opp_pitcher_id is None:
         opp_pitcher_id = mlb.get_player_id(opp_pitcher_name)
 
-    # ── 2. Rolling batting average (7 / 14 / 30 days) ───────────────────────
+    # ── 2. Rolling batting average and L10 Stability from game logs ──────────
     if player_id:
         logs = mlb.get_batter_game_logs(player_id, last_n=30)
         if not logs.empty:
             signals.update(_rolling_avg_signals(logs))
+            
+            # Stability check (hit in last 10 games)
+            # Default line for hits is usually 0.5, so we check H > 0
+            l10 = logs.tail(10)
+            hits_in_l10 = (l10["H"] > 0).sum()
+            signals["last_10_hit_rate"] = float(hits_in_l10 / 10.0)
 
     # ── 3. Handedness split ──────────────────────────────────────────────────
     if player_id:
