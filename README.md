@@ -134,6 +134,7 @@ Each prop runs through a **signal → normalize → weight → score** pipeline:
 6. **Dynamic Entry Generation**: Uses permutations (`picks/entry_optimizer.py`) to locate up to $150 Bankroll across fractional Kelly Criterion sized entries, safeguarding against drawdowns.
 7. **SQLite Backtesting DB**: Auto-logs and grades real-time entries in `tracking/performance.db` for complete P&L analytics.
 8. **Agentic Teacher & Re-scorer**: Scrapes results to train `data/dynamic_weights.json` on the first run of the day to recalibrate its confidence margins. AI automatically applies a **Dynamic Multiplier** (capped at ±10%) to today's confidence scores.
+9. **PrizePicks Placement Compliance**: Strict filtering protocols naturally exclude duplicated players within the same entry and mandates properties from two or more unique teams to guarantee line placement eligibility. Home Runs are banned programmatically due to excessive variance.
 
 View the AI's current memory and multipliers in `data/dynamic_weights.json`.
 
