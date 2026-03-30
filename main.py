@@ -1,206 +1,217 @@
 """
 main.py — CLI entry point for the MLB Betting Analysis system.
-
-Modes:
-    run       — Run full pick generation for today (or a given date)
-    serve     — Start FastAPI server
-    schedule  — Start APScheduler daemon (runs picks daily at 11 AM ET)
-    picks     — Print picks to console (alias for run but pretty-printed)
-
-Usage:
-    python main.py run
-    python main.py run --date 2025-04-01 --min-confidence 60
-    python main.py serve
-    python main.py serve --host 127.0.0.1 --port 8080
-    python main.py schedule
-    python main.py picks --source prizepicks
+Updated to use Click for PrizePicks Optimization.
 """
 from __future__ import annotations
 
-import argparse
+import click
 import datetime
 import json
 import sys
 from pathlib import Path
 
 from rich.console import Console
-from rich.table import Table
-from rich import box
 
 console = Console()
 
+@click.group()
+def cli():
+    """PrizePicks Betting Analysis CLI"""
+    pass
 
-def cmd_run(args: argparse.Namespace) -> None:
-    """Generate picks and write to JSON file."""
+@cli.command()
+@click.option('--date', default="today", help='Date (YYYY-MM-DD)')
+@click.option('--min-confidence', default=60, help='Minimum confidence')
+@click.option('--bankroll', default=150.0, help='Current bankroll')
+@click.option('--risk', default='conservative', help='Risk tolerance')
+@click.option('--source', default=None, help='prizepicks | draftkings | all')
+def run(date, min_confidence, bankroll, risk, source):
+    """Generate optimized PrizePicks entries"""
     from picks.pick_generator import generate_daily_picks
-    from picks.parlay_builder import build_parlays
-
-    # 🔍 Autonomous Learning Loop (First run of the day)
+    from analysis.correlation_engine import CorrelationEngine
+    from analysis.ev_calculator import EVCalculator
+    from picks.entry_optimizer import EntryOptimizer
+    from tracking.bankroll_manager import BankrollManager
+    from tracking.performance_tracker import PerformanceTracker
+    
+    # 🔍 Autonomous Learning Loop
     from analysis.teacher import Teacher
     teacher = Teacher()
-    if args.date == "today" and teacher.is_first_run_today():
+    if date == "today" and teacher.is_first_run_today():
         console.print("[bold yellow]🧠 First run today! AI is teaching itself from yesterday's results...[/]")
         teacher.run_daily_retro()
 
-    date = None
-    if args.date and args.date.lower() != "today":
-        date = datetime.date.fromisoformat(args.date)
+    actual_date = None
+    if date.lower() != "today":
+        actual_date = datetime.date.fromisoformat(date)
+    else:
+        actual_date = datetime.date.today()
 
-    console.print(f"\n[bold cyan]🎯 MLB Betting Analysis[/] — {date or datetime.date.today()}\n")
+    console.print(f"\n[bold cyan]🎯 PrizePicks EV Optimization[/] — {actual_date}\n")
 
-    with console.status("Fetching lines and running models…"):
+    with console.status("Fetching lines and running base models…"):
         picks = generate_daily_picks(
-            date=date,
-            min_confidence=args.min_confidence,
-            sources=_parse_sources(args.source),
+            date=actual_date,
+            min_confidence=min_confidence,
+            sources=__parse_sources(source),
         )
-        parlays = build_parlays(picks)
 
     if not picks:
         console.print("[yellow]⚠ No qualifying picks today.[/]")
         return
-
-    # ── Print picks table ────────────────────────────────────────────────────
-    table = Table(title=f"Top Picks — {date or datetime.date.today()}", box=box.ROUNDED)
-    table.add_column("Player", style="bold white")
-    table.add_column("Prop")
-    table.add_column("Line", justify="center")
-    table.add_column("Rec", justify="center")
-    table.add_column("Conf", justify="center")
-    table.add_column("Source")
-
-    for p in picks[:25]:
-        conf_color = "green" if p.confidence >= 70 else ("yellow" if p.confidence >= 60 else "white")
-        rec_color = "green" if p.recommendation == "OVER" else "red"
-        table.add_row(
-            p.player_name,
-            p.prop_type,
-            str(p.line),
-            f"[{rec_color}]{p.recommendation}[/]",
-            f"[{conf_color}]{p.confidence}[/]",
-            p.source,
-        )
-    console.print(table)
-
-    # ── Print parlay summary ─────────────────────────────────────────────────
-    if parlays["power_plays"]:
-        console.print("\n[bold cyan]⚡ Top Power Plays (2-leg)[/]")
-        for i, pp in enumerate(parlays["power_plays"], 1):
-            legs = ", ".join(f"{l.player_name} {l.recommendation} {l.prop_type} ({l.line})" for l in pp.legs)
-            console.print(f"  {i}. [{pp.combined_score:.0f}] {legs}")
-
-    if parlays["flex_plays"]:
-        console.print("\n[bold magenta]🎰 Top Flex Plays[/]")
-        for i, fp in enumerate(parlays["flex_plays"], 1):
-            legs = " | ".join(f"{l.player_name} {l.recommendation}" for l in fp.legs)
-            console.print(f"  {i}. [{fp.num_legs}-leg, conf={fp.avg_confidence:.0f}] {legs}")
-
-    # ── AI Validation ────────────────────────────────────────────────────────
-    ai_analysis = None
-    high_conf_picks = [p.to_dict() for p in picks if p.confidence >= 75]
-    if high_conf_picks:
-        from utils.gemini_client import vet_top_picks
-        with console.status("Querying Gemini AI for expert validation…"):
-            ai_analysis = vet_top_picks(high_conf_picks)
         
-        console.print("\n[bold green]🤖 AI Expert Analysis[/]")
-        console.print(f"{ai_analysis}\n")
+    with console.status("Optimizing Entries and calculating correlations…"):
+        corr_engine = CorrelationEngine()
+        ev_calc = EVCalculator(corr_engine)
+        optimizer = EntryOptimizer(ev_calc)
+        
+        # Generator step
+        entries = optimizer.generate_all_entries(picks, min_confidence)
+        
+        # Optimize
+        manager = BankrollManager(bankroll, risk_tolerance=risk)
+        portfolio = optimizer.optimize_portfolio(entries, bankroll, risk)
+        
+        for entry in portfolio:
+            entry['recommended_size'] = manager.get_recommended_entry_size(entry, bankroll)
 
-    # ── Write JSON output ────────────────────────────────────────────────────
-    today = date or datetime.date.today()
-    out_path = Path("output") / f"picks_{today.isoformat()}.json"
+    print(f"\n{'='*80}")
+    print(f"OPTIMIZED PRIZEPICKS ENTRIES FOR {actual_date}")
+    print(f"{'='*80}\n")
+    
+    print(f"Starting Bankroll: ${bankroll}")
+    print(f"Risk Tolerance: {risk.capitalize()}")
+    print(f"Entries Generated: {len(portfolio)}\n")
+    
+    tracker = PerformanceTracker()
+    for i, entry in enumerate(portfolio, 1):
+        print(f"\nEntry #{i} — {entry['recommended_type'].upper()}")
+        print(f"  Type: {entry['entry_type']}")
+        print(f"  Recommended Size: ${entry['recommended_size']}")
+        print(f"  Expected Value: ${entry['ev']:.2f}")
+        print(f"  ROI: {entry['roi']:.1f}%")
+        print(f"  Win Probability: {entry['win_probability']*100:.1f}%")
+        print(f"  Correlation Score: {entry['correlation_score']:.2f}")
+        print(f"\n  Picks:")
+        for pick in entry['picks']:
+            print(f"    - {getattr(pick, 'player_name', '')}: {getattr(pick, 'prop_type', '')} {getattr(pick, 'recommendation', 'OVER')} {getattr(pick, 'line', 0)}")
+            print(f"      Confidence: {getattr(pick, 'confidence', 0)}%")
+            
+        tracker.log_entry(entry)
+
+    # Save to file
+    out_path = Path("output") / f"entries_{actual_date.isoformat()}.json"
     Path("output").mkdir(exist_ok=True)
-    payload = {
-        "generated_at": datetime.datetime.utcnow().isoformat(),
-        "date": today.isoformat(),
-        "picks_count": len(picks),
-        "ai_analysis": ai_analysis,
-        "picks": [p.to_dict() for p in picks],
-        "parlays": {
-            "power_plays": [p.to_dict() for p in parlays["power_plays"]],
-            "flex_plays":  [p.to_dict() for p in parlays["flex_plays"]],
-        },
-    }
-    out_path.write_text(json.dumps(payload, indent=2))
-    console.print(f"\n[dim]✅ Saved {len(picks)} picks → {out_path}[/]")
+    
+    def clean_entry(e):
+        c = e.copy()
+        c['picks'] = [getattr(p, 'to_dict', lambda: {})() for p in e['picks']]
+        return c
+        
+    out_path.write_text(json.dumps([clean_entry(e) for e in portfolio], indent=2))
+    console.print(f"\n[dim]✅ Entries saved → {out_path}[/]")
 
+@cli.command()
+@click.option('--date', required=True, help='Date to grade (YYYY-MM-DD)')
+def grade(date):
+    """Grade picks for a specific date"""
+    from tracking.performance_tracker import PerformanceTracker
+    from tracking.results_grader import ResultsGrader
+    
+    console.print(f"Grading entries for {date}...\n")
+    tracker = PerformanceTracker()
+    grader = ResultsGrader(tracker)
+    count = grader.grade_date(date)
+    console.print(f"[bold green]✅ Graded {count} entries back into performance tracking.[/]")
 
-def cmd_serve(args: argparse.Namespace) -> None:
-    """Start the FastAPI server."""
-    import uvicorn
-    from api.app import app
+@cli.command()
+@click.option('--days', default=30, help='Number of days to analyze')
+def stats(days):
+    """Display performance statistics"""
+    from tracking.performance_tracker import PerformanceTracker
+    tracker = PerformanceTracker()
+    stats = tracker.calculate_statistics()
+    
+    print(f"\n{'='*80}")
+    print(f"PERFORMANCE STATISTICS - Database Total")
+    print(f"{'='*80}\n")
+    
+    print(f"Total Entries: {stats['total_entries']}")
+    print(f"Win Rate: {stats['win_rate']:.1f}%")
+    print(f"Total Wagered: ${stats['total_wagered']:.2f}")
+    print(f"Total Profit: ${stats['total_profit']:+.2f}")
+    print(f"ROI: {stats['roi']:+.1f}%")
 
-    console.print(f"\n[bold cyan]🚀 Starting API server[/] at http://{args.host}:{args.port}")
-    console.print(f"  Docs → [link]http://{args.host}:{args.port}/docs[/link]\n")
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+@cli.command()
+@click.option('--date', required=True, help='Historical date (YYYY-MM-DD)')
+def demo(date):
+    """Run demo picks on historical date"""
+    from utils.demo_mode import DemoMode
+    from tracking.performance_tracker import PerformanceTracker
+    
+    console.print(f"Running demo picks for {date}...\n")
+    demo_mode = DemoMode(PerformanceTracker())
+    demo_mode.run_demo_picks(date)
+    console.print(f"\n[green]Demo picks generated. Grade them later.[/]")
 
+@cli.command()
+@click.option('--start-date', required=True)
+@click.option('--end-date', required=True)
+@click.option('--bankroll', default=150.0)
+def backtest(start_date, end_date, bankroll):
+    """Run backtest over date range"""
+    from utils.demo_mode import DemoMode
+    from tracking.performance_tracker import PerformanceTracker
+    
+    console.print(f"Running backtest from {start_date} to {end_date}...")
+    console.print(f"Starting bankroll: ${bankroll}\n")
+    
+    demo_mode = DemoMode(PerformanceTracker())
+    results = demo_mode.run_backtest(start_date, end_date, bankroll)
+    
+    final_bankroll = results[-1]['bankroll'] if results else bankroll
+    profit = final_bankroll - bankroll
+    roi = (profit / bankroll) * 100 if bankroll > 0 else 0
+    
+    print(f"\n{'='*80}")
+    print(f"BACKTEST RESULTS")
+    print(f"{'='*80}\n")
+    print(f"Starting Bankroll: ${bankroll}")
+    print(f"Final Bankroll: ${final_bankroll:.2f}")
+    print(f"Total Profit: ${profit:+.2f}")
+    print(f"ROI: {roi:+.1f}%")
+    print(f"Trading Days: {len(results)}")
+    
+    demo_mode.visualize_backtest_results(results)
+    console.print(f"\n[dim]Chart saved to: output/backtest_results.png[/]")
 
-def cmd_schedule(args: argparse.Namespace) -> None:
-    """Start the APScheduler daemon."""
-    from scheduler import start_scheduler
-    start_scheduler()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Argument Parsing
-# ─────────────────────────────────────────────────────────────────────────────
-
-def cmd_reset_learning(args: argparse.Namespace) -> None:
-    """Wipe the AI's multipliers back to baseline."""
+@cli.command()
+def reset_learning():
+    """Wipe AI weights and learning history"""
     from analysis.teacher import Teacher
     Teacher().reset_learning()
     console.print("[bold green]✅ AI learning history and multipliers have been reset.[/]")
 
-def _parse_sources(source: str | None) -> list[str] | None:
-    if not source:
-        return None
+@cli.command()
+@click.option('--host', default="0.0.0.0")
+@click.option('--port', default=8000, type=int)
+def serve(host, port):
+    """Start FastAPI REST server"""
+    import uvicorn
+    from api.app import app
+    console.print(f"\n[bold cyan]🚀 Starting API server[/] at http://{host}:{port}")
+    uvicorn.run(app, host=host, port=port, log_level="info")
+
+def __parse_sources(source: str | None) -> list[str] | None:
+    if not source: return None
     s = source.strip().lower()
-    if s in ("pp", "prizepicks"):
-        return ["PrizePicks"]
-    if s in ("dk", "draftkings"):
-        return ["DraftKings"]
-    return None  # all sources
+    if s in ("pp", "prizepicks"): return ["PrizePicks"]
+    if s in ("dk", "draftkings"): return ["DraftKings"]
+    return None
 
-
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="mlb-betting",
-        description="MLB Betting Analysis — pick generation, API server, and scheduler",
-    )
-    sub = parser.add_subparsers(dest="command", required=True)
-
-    # run
-    run_p = sub.add_parser("run", help="Generate picks for today (or a given date)")
-    run_p.add_argument("--date", default="today", help="YYYY-MM-DD or 'today'")
-    run_p.add_argument("--min-confidence", type=int, default=55)
-    run_p.add_argument("--source", default=None, help="prizepicks | draftkings | all")
-    run_p.set_defaults(func=cmd_run)
-
-    # picks (alias for run)
-    picks_p = sub.add_parser("picks", help="Alias for 'run'")
-    picks_p.add_argument("--date", default="today")
-    picks_p.add_argument("--min-confidence", type=int, default=55)
-    picks_p.add_argument("--source", default=None)
-    picks_p.set_defaults(func=cmd_run)
-
-    # serve
-    serve_p = sub.add_parser("serve", help="Start FastAPI REST server")
-    serve_p.add_argument("--host", default="0.0.0.0")
-    serve_p.add_argument("--port", type=int, default=8000)
-    serve_p.set_defaults(func=cmd_serve)
-
-    # reset-learning
-    reset_p = sub.add_parser("reset-learning", help="Wipe AI weights and learning history")
-    reset_p.set_defaults(func=cmd_reset_learning)
-
-    return parser
-
-
-if __name__ == "__main__":
-    parser = build_parser()
-    args = parser.parse_args()
+if __name__ == '__main__':
     try:
-        args.func(args)
+        cli()
     except KeyboardInterrupt:
         console.print("\n[dim]Interrupted.[/]")
         sys.exit(0)

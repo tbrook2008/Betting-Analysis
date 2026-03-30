@@ -11,6 +11,8 @@ requests>=2.31.0           # Sync HTTP (fallback)
 # Data Processing
 pandas>=2.2.0
 numpy>=1.26.0
+scipy>=1.7.0               # Advanced probability distributions
+matplotlib>=3.5.0          # Backtest visualization
 
 # API Framework
 fastapi>=0.111.0

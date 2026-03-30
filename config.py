@@ -202,3 +202,39 @@ CACHE_TTL_GAME_LOGS = 21_600   # 6 hours — player game logs
 # Logging
 # ─────────────────────────────────────────────────────────────────────────────
 LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# EV, Correlation, and PrizePicks Overhaul Configurations
+# ─────────────────────────────────────────────────────────────────────────────
+
+PRIZEPICKS_CONFIG = {
+    'min_confidence_threshold': 60,
+    'min_ev_threshold': 0.0,
+    'min_roi_threshold': 5.0,
+    'max_correlation_negative': -0.3,
+    'prefer_flex_under_bankroll': 200,
+}
+
+BANKROLL_CONFIG = {
+    'default_starting_bankroll': 150,
+    'risk_tolerance': 'conservative',  # 'conservative', 'moderate', 'aggressive'
+    'kelly_fraction': 0.25,
+    'max_daily_risk_pct': 20,
+    'max_single_entry_pct': 5,
+    'stop_loss_pct': 33,
+    'min_entry_size': 3,
+}
+
+ENTRY_OPTIMIZATION_CONFIG = {
+    'max_entries_per_day': 5,
+    'allow_pick_overlap': False,
+    'prioritize_by': 'ev',
+    'min_stack_correlation': 0.20,
+}
+
+TRACKING_CONFIG = {
+    'database_path': 'tracking/performance.db',
+    'min_sample_size_for_patterns': 20,
+    'report_formats': ['text', 'json'],
+    'auto_grade_after_hours': 6,
+}

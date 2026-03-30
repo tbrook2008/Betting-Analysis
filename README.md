@@ -27,18 +27,27 @@ python main.py serve
 
 ---
 
-## CLI Reference
+## The Advanced CLI (Powered by click)
 
-| Command | Description |
-|---|---|
-| `python main.py run` | Generate today's picks, print table, save JSON |
-| `python main.py run --date 2025-04-15` | Run for a specific date |
-| `python main.py run --min-confidence 65` | Stricter confidence filter |
-| `python main.py run --source prizepicks` | Only use PrizePicks lines |
-| `python main.py serve` | Start FastAPI on port 8000 |
-| `python main.py serve --port 8080` | Custom port |
-| `python main.py schedule` | Start daily auto-run daemon (11 AM ET) |
-| `python main.py reset-learning` | Wipe AI multipliers and reset learning history |
+The system is fully controlled via a modular set of commands.
+
+```bash
+# 1. Generate optimal Positive EV portfolios for today:
+python main.py run --bankroll 150 --risk conservative 
+
+# 2. Grade yesterday's portfolio via MLB stats and adjust trackers:
+python main.py grade --date 2026-03-30
+
+# 3. Simulate a one-month historical backtest
+python main.py backtest --start-date 2026-03-01 --end-date 2026-03-30 --bankroll 150
+
+# 4. Read lifetime algorithm profitability
+python main.py stats
+
+# 5. Start API Server or reset AI weights
+python main.py serve --port 8080
+python main.py reset-learning
+```
 
 ---
 
@@ -121,19 +130,10 @@ Each prop runs through a **signal → normalize → weight → score** pipeline:
 2. Each signal is **normalized to [-1, +1]** against known MLB ranges
 3. Signals are **weighted** by prop-type-specific dictionaries in `config.py`
 4. The weighted sum maps to a **0–100 score** (50 = neutral, 70+ = high confidence)
-5. Score ≥ 55 → **OVER**; Score ≤ 45 → **UNDER**; else **NO PLAY**
-
-Tweak weights anytime in `config.py` — no model code changes needed.
-
----
-
-## Autonomous Learning 🤖
-
-The system features a **Self-Teaching Loop** that triggers on the first run of each day:
-
-1. **Daily Retrospective**: The `Teacher` module scrapes yesterday's final box scores from the MLB Stats API.
-2. **Accuracy Grading**: It compares our picks against actual results to calculate a performance grade.
-3. **Weight Tuning**: If a model (e.g., Pitcher K's) is performing well, the AI automatically applies a **Dynamic Multiplier** (capped at ±10%) to today's confidence scores.
+5. **Quantitative EV Optimization**: Rebuilt to calculate exact statistical edge. `analysis/ev_calculator` uses binomial theorems (`scipy`) and correlation multipliers (`analysis/correlation_engine.py`) to build combinations that explicitly target positive ROI rather than raw hit-rate.
+6. **Dynamic Entry Generation**: Uses permutations (`picks/entry_optimizer.py`) to locate up to $150 Bankroll across fractional Kelly Criterion sized entries, safeguarding against drawdowns.
+7. **SQLite Backtesting DB**: Auto-logs and grades real-time entries in `tracking/performance.db` for complete P&L analytics.
+8. **Agentic Teacher & Re-scorer**: Scrapes results to train `data/dynamic_weights.json` on the first run of the day to recalibrate its confidence margins. AI automatically applies a **Dynamic Multiplier** (capped at ±10%) to today's confidence scores.
 
 View the AI's current memory and multipliers in `data/dynamic_weights.json`.
 

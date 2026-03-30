@@ -1,27 +1,32 @@
 # MLB Betting Analysis | Project Status — March 30, 2026
 
-## 🎯 Current Strategy: "The Stability Pivot"
-The system has fully transitioned from a high-variance "Home Run" model to a **Stability-Weighted** strategy. 
+## 🎯 Current Strategy: The EV Quantitative Overhaul
+The system has fully transitioned from a simple high-variance "Home Run" model to an **Expected Value (EV) Quantitative Trading Engine** built explicitly to exploit PrizePicks payouts and prop correlations.
 
 ### Core Pillars:
-1. **The 0.5 Line Safety**: Preference for Hit/Single props with a 0.5 line score, providing the lowest possible variance for hitters.
-2. **Gold Standard K-Metrics**: Preference for pitchers with >30% strikeout rates (e.g. Cole Ragans, Chris Sale, Chase Burns).
-3. **Autonomous Learning**: The system now features a **Teacher Module** that reviews yesterday's results and self-adjusts its confidence weights daily.
+1. **Correlation Mathematics**: Evaluating whether legs share a positive correlation (Hitters from same game) or negative (Pitcher Ks vs opposing Hitters Hits).
+2. **Kelly Criterion Bankroll Protection**: Auto-sizing plays utilizing fractional Kelly formulas based on true estimated EV to prevent risk-of-ruin drawdowns.
+3. **Binomial Distributions**: Leveraging statistical permutations (`scipy.special.comb`) to determine the exact Expected Value of 3, 4, 5, and 6-leg Flex combinations.
+4. **Historical Backtesting**: Embedded capabilities across SQLite bounds and `matplotlib` generation to measure performance against a historical data matrix.
 
 ## 🧠 System Architecture
 
 | Component | Responsibility |
 | :--- | :--- |
-| **`analysis/teacher.py`** | The "Brain." Runs every morning to grade accuracy and tune model multipliers. |
-| **`analysis/confidence_scorer.py`** | The "Executioner." Applies variance penalties, stability bonuses (Gold Standard), and AI learned multipliers. |
-| **`picks/parlay_builder.py`** | The "Orchestrator." Groups high-confidence legs into 2-leg Power Plays and 3-leg Flex Plays. |
-| **`data/dynamic_weights.json`** | The "Memory." Persists the AI's learned adjustments across runs. |
+| **`analysis/correlation_engine.py`** | Multiplies independent leg probabilities based on intra-game dependency rules. |
+| **`analysis/ev_calculator.py`** | Derives exact Expected Value based on PrizePicks standard multiplier payouts. |
+| **`picks/entry_optimizer.py`** | Scans all available Top Picks combinatorics to group them into highest-EV portfolios. |
+| **`tracking/bankroll_manager.py`** | Re-scales the entry sizes based on the user's `$28.00` bankroll and risk-limits. |
+| **`tracking/performance_tracker.py`** | The SQLite local database tracking every generated play. |
+| **`utils/demo_mode.py`** | The backtesting interface generating return-on-investment charts. |
 
 ## 📈 Performance Summary
-- **Initial Deposit**: $30.00
-- **Current Balance**: $28.00 (from a $28.00 3-leg Flex Win on 03/28)
-- **Pending Entries**: $28.00 spread across a $20 3-leg Power Play and an $8 2-leg Power Play for 03/30.
+- **Current Balance**: $28.00 
+- **System Version**: v2.1 (EV/PP Focus)
+- **Pending Actions**: Daily slate crunch currently executing to maximize PP return.
 
-## 🛠️ Maintenance & CLI
-- **`python main.py run`**: Automatic learning triggered on first run of the day.
-- **`python main.py reset-learning`**: Wipes all AI multipliers back to 1.0 baseline.
+## 🛠️ CLI Architecture (`click`)
+- **`python main.py run --bankroll 28 --risk conservative`**: Generate max EV portfolio for today.
+- **`python main.py grade --date 2026-03-30`**: Resolve all pending plays against actual outcomes.
+- **`python main.py stats`**: Fetch DB returns.
+- **`python main.py backtest --start-date 2026-03-01 --end-date 2026-03-30`**: Visualize model performance.
