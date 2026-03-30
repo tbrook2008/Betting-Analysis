@@ -14,14 +14,28 @@ class EntryOptimizer:
 
     def generate_all_entries(self, picks_list: List[Any], min_confidence: int = 60) -> List[Dict[str, Any]]:
         """Generate all positive EV entries from given picks."""
+        # 1. Filter out high-variance Home Runs entirely.
+        safe_picks = [p for p in picks_list if getattr(p, 'prop_type', '').lower() != 'home runs']
+        
         # Sort by confidence and take top 15 to cap combinations at ~5000 max (preventing 7m+ combos)
-        filtered_picks = sorted([p for p in picks_list if getattr(p, 'confidence', 0) >= min_confidence], 
+        filtered_picks = sorted([p for p in safe_picks if getattr(p, 'confidence', 0) >= min_confidence], 
                                 key=lambda x: getattr(x, 'confidence', 0), reverse=True)[:15]
+                                
         entries = []
         # PrizePicks supports 2-6 picks per entry
         for size in range(2, 7):
             for combo in itertools.combinations(filtered_picks, size):
                 combo_list = list(combo)
+                
+                # 2. Strict Filter: Prevent the same player from appearing multiple times in a single entry
+                players_in_combo = {getattr(p, 'player_name', '') for p in combo_list}
+                if len(players_in_combo) < size:
+                    continue
+                    
+                # 3. PrizePicks Rule: Entries MUST contain players from at least 2 different teams
+                teams_in_combo = {getattr(p, 'team', '') for p in combo_list if getattr(p, 'team', '')}
+                if len(teams_in_combo) < 2 and len(teams_in_combo) > 0:
+                    continue
                 
                 # Check negative correlation warnings before calc
                 if self.comb_analyzer.has_strong_negative_correlation(combo_list):
