@@ -1,10 +1,17 @@
 {
-  "last_run_date": "2026-03-30",
-  "learning_history": [],
+  "last_run_date": "2026-03-31",
+  "learning_history": [
+    {
+      "date": "2026-03-30",
+      "category": "home_runs",
+      "accuracy": 0.06451612903225806,
+      "multiplier": 0.98
+    }
+  ],
   "multipliers": {
     "pitcher_ks": 1.0,
     "hits": 1.0,
-    "home_runs": 1.0,
+    "home_runs": 0.98,
     "total_bases": 1.0,
     "game_totals": 1.0
   }

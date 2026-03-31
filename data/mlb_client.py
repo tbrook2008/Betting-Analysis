@@ -149,6 +149,8 @@ def get_batter_game_logs(player_id: int, last_n: int = 30) -> pd.DataFrame:
         rows.append({
             "date": s.get("date"),
             "H": int(stat.get("hits", 0)),
+            "2B": int(stat.get("doubles", 0)),
+            "3B": int(stat.get("triples", 0)),
             "AB": int(stat.get("atBats", 0)),
             "HR": int(stat.get("homeRuns", 0)),
             "RBI": int(stat.get("rbi", 0)),
@@ -540,6 +542,57 @@ def get_bullpen_fatigue(team_id: int, days: int = 3) -> float:
         log.error(f"Bullpen fatigue fetch failed: {exc}")
         return 0.0
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Daily Boxscores (For Immediate Grading)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@cached(ttl=3600, key_prefix="daily_boxscores_v3")
+def get_daily_boxscores(date_str: str) -> dict:
+    """
+    Fetch and aggregate all player stats from a specific day's boxscores.
+    Returns: { player_id: {"batting": {...}, "pitching": {...}} }
+    """
+    try:
+        # Date string must be MM/DD/YYYY for statsapi.schedule
+        d_obj = datetime.datetime.fromisoformat(date_str)
+        fmt_date = d_obj.strftime("%m/%d/%Y")
+    except ValueError:
+        fmt_date = date_str
+        
+    games = statsapi.schedule(date=fmt_date)
+    aggregated = {}
+    
+    for g in games:
+        try:
+            box = statsapi.boxscore_data(g['game_id'])
+            
+            # Parse Batters
+            for side in ['awayBatters', 'homeBatters']:
+                for b in box.get(side, []):
+                    pid = b.get('personId')
+                    if pid:
+                        pid_int = int(pid)
+                        if pid_int not in aggregated: aggregated[pid_int] = {"batting": {}, "pitching": {}}
+                        aggregated[pid_int]["batting"]["hits"] = aggregated[pid_int]["batting"].get("hits", 0) + int(b.get("h", 0))
+                        # Note: the statsapi object has 'doubles', 'triples', and 'hr' instead of 'homeRuns' inside these flat lists
+                        aggregated[pid_int]["batting"]["doubles"] = aggregated[pid_int]["batting"].get("doubles", 0) + int(b.get("doubles", 0))
+                        aggregated[pid_int]["batting"]["triples"] = aggregated[pid_int]["batting"].get("triples", 0) + int(b.get("triples", 0))
+                        aggregated[pid_int]["batting"]["homeRuns"] = aggregated[pid_int]["batting"].get("homeRuns", 0) + int(b.get("hr", 0))
+                        
+            # Parse Pitchers
+            for side in ['awayPitchers', 'homePitchers']:
+                for p in box.get(side, []):
+                    pid = p.get('personId')
+                    if pid:
+                        pid_int = int(pid)
+                        if pid_int not in aggregated: aggregated[pid_int] = {"batting": {}, "pitching": {}}
+                        aggregated[pid_int]["pitching"]["strikeOuts"] = aggregated[pid_int]["pitching"].get("strikeOuts", 0) + int(p.get("k", 0))
+                        
+        except Exception as exc:
+            log.warning(f"Failed to fetch boxscore for game {g.get('game_id')}: {exc}")
+            
+    return aggregated
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Internal Helpers

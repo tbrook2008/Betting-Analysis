@@ -134,22 +134,34 @@ class Teacher:
         if not p_id: return None
         
         date_str = date.isoformat()
+        boxscores = mlb.get_daily_boxscores(date_str)
+        if p_id not in boxscores:
+            return None
+            
+        b_stats = boxscores[p_id]["batting"]
+        p_stats = boxscores[p_id]["pitching"]
         
         if category == "pitcher_ks":
-            df = mlb.get_pitcher_game_logs(p_id)
-            match = df[df['date'] == date_str]
-            return float(match['SO'].iloc[0]) if not match.empty else None
+            return float(p_stats.get("strikeOuts", 0)) if "strikeOuts" in p_stats else None
             
-        elif category in ["hits", "singles", "total_bases"]:
-            df = mlb.get_batter_game_logs(p_id)
-            match = df[df['date'] == date_str]
-            if match.empty: return None
+        elif category in ["hits", "singles", "total_bases", "home_runs"]:
+            if "hits" not in b_stats: return None
             
-            if category == "hits": return float(match['H'].iloc[0])
+            h = float(b_stats.get("hits", 0))
+            if category == "hits":
+                return h
+                
+            d = float(b_stats.get("doubles", 0))
+            t = float(b_stats.get("triples", 0))
+            hr = float(b_stats.get("homeRuns", 0))
+            
+            if category == "home_runs":
+                return hr
+            if category == "singles":
+                return h - d - t - hr
             if category == "total_bases":
-                # Rough approximation: TB = H + 2B + 2*3B + 3*HR (Note: base MLB API returns raw TB)
-                # For safety, using a simplified check
-                return float(match['H'].iloc[0]) 
+                singles = h - d - t - hr
+                return singles + (2*d) + (3*t) + (4*hr)
         
         return None
 

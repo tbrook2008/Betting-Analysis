@@ -1,32 +1,39 @@
-# MLB Betting Analysis | Project Status — March 30, 2026
+# MLB Betting Analysis | Project Status — March 31, 2026
 
-## 🎯 Current Strategy: The EV Quantitative Overhaul
-The system has fully transitioned from a simple high-variance "Home Run" model to an **Expected Value (EV) Quantitative Trading Engine** built explicitly to exploit PrizePicks payouts and prop correlations.
+## 🎯 Current Strategy: The Autonomous Quantitative Engine
+The system has fully transitioned from a simple high-variance model to a self-teaching **Expected Value (EV) Quantitative Trading Engine** built explicitly to exploit PrizePicks payouts and mathematically react to its own failures.
 
-### Core Pillars:
-1. **Correlation Mathematics**: Evaluating whether legs share a positive correlation (Hitters from same game) or negative (Pitcher Ks vs opposing Hitters Hits).
-2. **Kelly Criterion Bankroll Protection**: Auto-sizing plays utilizing fractional Kelly formulas based on true estimated EV to prevent risk-of-ruin drawdowns.
-3. **Binomial Distributions**: Leveraging statistical permutations (`scipy.special.comb`) to determine the exact Expected Value of 3, 4, 5, and 6-leg Flex combinations.
-4. **Historical Backtesting**: Embedded capabilities across SQLite bounds and `matplotlib` generation to measure performance against a historical data matrix.
+### Core Architecture Pillars:
+1. **Correlation Mathematics (`analysis/correlation_engine.py`)**: Mathematically scales independent probabilities into reliant permutations (e.g. boosting the probability if a ticket pairs batters from the same game).
+2. **Binomial Distributions (`analysis/ev_calculator.py`)**: Utilizes statistical combinatorics (`scipy.special.comb`) to determine the exact Expected Value and ROIs of 3, 4, 5, and 6-leg combinations hitting the threshold (N or N-1).
+3. **Kelly Criterion Bankroll Protection (`tracking/bankroll_manager.py`)**: Autosizing entry plays leveraging fractional Kelly formulas to eliminate risk-of-ruin while compounding daily returns.
+4. **Live Verification (`tracking/results_grader.py`)**: The system no longer mocks data. It systematically scrapes the live MLB API (`statsapi.boxscore_data`) each morning to fetch explicit outcomes for graded tickets.
+5. **The Teacher (`analysis/teacher.py`)**: *The active AI feedback loop.* After verifying MLB box scores, the Teacher checks its accuracy. If the AI missed its projections on a specific prop type (e.g., Home Runs), the algorithm dynamically nerfs its confidence multiplier for that prop in `dynamic_weights.json` so it scales back risk mechanically going forward.
 
-## 🧠 System Architecture
+## 🧠 System Index
 
 | Component | Responsibility |
 | :--- | :--- |
+| **`analysis/teacher.py`** | The autonomous nervous system that degrades or amplifies model weight arrays based on the empirical hit-rate calculated from yesterday's MLB server outputs. |
 | **`analysis/correlation_engine.py`** | Multiplies independent leg probabilities based on intra-game dependency rules. |
 | **`analysis/ev_calculator.py`** | Derives exact Expected Value based on PrizePicks standard multiplier payouts. |
-| **`picks/entry_optimizer.py`** | Scans all available Top Picks combinatorics to group them into highest-EV portfolios. |
-| **`tracking/bankroll_manager.py`** | Re-scales the entry sizes based on the user's `$28.00` bankroll and risk-limits. |
-| **`tracking/performance_tracker.py`** | The SQLite local database tracking every generated play. |
-| **`utils/demo_mode.py`** | The backtesting interface generating return-on-investment charts. |
+| **`picks/entry_optimizer.py`** | Scans all available Top Picks combinatorics to group them into highest-EV portfolios, mandating strict compliance features (no dupes, multi-team rules). |
+| **`data/mlb_client.py`** | Aggregates massive live MLB boxscore dictionaries to avoid missing cache logs. |
+| **`tracking/bankroll_manager.py`** | Re-scales the entry sizes based on the user's localized bankroll and risk exposure. |
+| **`tracking/performance_tracker.py`** | SQLite backend storing every generated play. |
 
-## 📈 Performance Summary
-- **Current Balance**: $28.00 
-- **System Version**: v2.1 (EV/PP Focus)
-- **Pending Actions**: Daily slate crunch currently executing to maximize PP return.
+## 📈 Performance & State Summary
+- **Current Balance**: $30.00 
+- **System Version**: v3.0 (Autonomous EV Engine)
+- **Active State**: System recently suffered a $28 loss on highly-variant manual `home_run` props. The `Teacher` scraped the boxscores, detected a massive miss-rate (only 6% accuracy), and autonomously degraded the `home_run` multiplier to 0.98. Today's slate successfully filtered out HR risk and pivoted to Pitcher Strikeouts.
 
 ## 🛠️ CLI Architecture (`click`)
-- **`python main.py run --bankroll 28 --risk conservative`**: Generate max EV portfolio for today.
-- **`python main.py grade --date 2026-03-30`**: Resolve all pending plays against actual outcomes.
-- **`python main.py stats`**: Fetch DB returns.
-- **`python main.py backtest --start-date 2026-03-01 --end-date 2026-03-30`**: Visualize model performance.
+- **`python main.py run --bankroll 30 --risk conservative`**: Generates and optimizes max EV portfolio for today.
+- **`python main.py grade --date 2026-03-30`**: Resolves all pending plays against actual MLB boxscore outcomes and activates the `Teacher`.
+- **`python main.py stats`**: Fetch SQL DB returns.
+- **`python main.py backtest --start-date 2026-03-01 --end-date 2026-03-30`**: Visually maps historically predicted models.
+
+## 🚀 Recommended Agent Pivot / Next Steps
+1. **Sportsbook Arbitration Surface**: Hard-code Fanduel or Underdog SDKs into the baseline odds extraction to expand the arbitrage surface layer.
+2. **React/FastAPI Dashboard**: Wrap the SQLite SQL performance tracking into a visualization grid, showing the daily ROI compound graph over time.
+3. **Advanced ML Models**: Build deeper neural splits to track individual batter success directly against individual pitcher spin rates, feeding that into a new `analysis/advanced_model.py`.
