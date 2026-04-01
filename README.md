@@ -1,6 +1,6 @@
-# MLB Betting Analysis 🏟️
+# MLB Betting Analysis 🏙️
 
-A fully automated Python system for MLB prop betting — ingests real game data, scores each PrizePicks/DraftKings line with a weighted confidence model, and surfaces high-confidence picks + parlays via CLI or REST API.
+A **v4.0** production-grade autonomous quantitative platform for MLB prop betting. Ingests real game data, scores every PrizePicks/DraftKings line with a weighted multi-signal confidence model, generates positive-EV combinatoric entries, auto-reads your live bankroll, and self-corrects via a daily AI retrospective loop.
 
 ---
 
@@ -124,17 +124,20 @@ Betting Analysis/
 
 ## Confidence Scoring
 
-Each prop runs through a **signal → normalize → weight → score** pipeline:
+Each prop runs through a **signal → normalize → weight → score → audit** pipeline:
 
 1. **Signals** are fetched for the prop type (AVG, K%, barrel%, etc.)
 2. Each signal is **normalized to [-1, +1]** against known MLB ranges
 3. Signals are **weighted** by prop-type-specific dictionaries in `config.py`
 4. The weighted sum maps to a **0–100 score** (50 = neutral, 70+ = high confidence)
-5. **Quantitative EV Optimization**: Rebuilt to calculate exact statistical edge. `analysis/ev_calculator` uses binomial theorems (`scipy`) and correlation multipliers (`analysis/correlation_engine.py`) to build combinations that explicitly target positive ROI rather than raw hit-rate.
-6. **Dynamic Entry Generation**: Uses permutations (`picks/entry_optimizer.py`) to locate up to $150 Bankroll across fractional Kelly Criterion sized entries, safeguarding against drawdowns.
-7. **SQLite Backtesting DB**: Auto-logs and grades real-time entries in `tracking/performance.db` for complete P&L analytics.
-8. **Agentic Teacher & Re-scorer**: Scrapes results to train `data/dynamic_weights.json` on the first run of the day to recalibrate its confidence margins. AI automatically applies a **Dynamic Multiplier** (capped at ±10%) to today's confidence scores.
-9. **PrizePicks Placement Compliance**: Strict filtering protocols naturally exclude duplicated players within the same entry and mandates properties from two or more unique teams to guarantee line placement eligibility. Home Runs are banned programmatically due to excessive variance.
+5. **Line-Difficulty Penalty** *(v4.0)*: Pitcher K lines >9.0 and hit lines >1.5 incur proportional confidence reductions.
+6. **Quantitative EV Optimization**: `analysis/ev_calculator.py` uses exact binomial distributions and per-outcome PrizePicks payout tables (e.g. Flex 3: 3/3=2.25x, 2/3=1.25x) to eliminate inflated EV estimates.
+7. **Correlation Engine** *(v4.0, all 6 rules active)*: Pitcher vs opposing batters = −0.35 correlation. Same-game dual pitchers = −0.20. Same-team hitters = +0.25.
+8. **Fractional Kelly Criterion Bankroll** *(v4.0 auto-read)*: System reads the actual live P&L balance from `performance.db`. Kelly sizes scale automatically against the real current balance.
+9. **Autonomous Teacher** *(v4.0 proportional nudge)*: After grading, the Teacher adjusts model weights using `nudge = (accuracy - 0.55) × 0.10` — a 6% hit-rate now triggers a ~5% penalty (was 2% before).
+10. **DB-Backed Learning** *(v4.0)*: Graded actual values are persisted to `entry_picks` table so the Teacher reads verified outcomes instead of re-fetching the API.
+11. **PrizePicks Compliance**: Home Runs banned, no duplicate players, 2+ team requirement enforced.
+12. **Market Edge Filter** *(v4.0)*: Picks are discarded if model confidence doesn’t beat the market-implied probability by at least 5%.
 
 View the AI's current memory and multipliers in `data/dynamic_weights.json`.
 

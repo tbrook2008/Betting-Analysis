@@ -42,9 +42,20 @@ class PerformanceTracker:
                 line REAL,
                 over_under TEXT,
                 confidence REAL,
+                actual_value REAL DEFAULT NULL,
+                was_correct INTEGER DEFAULT NULL,
                 FOREIGN KEY(entry_id) REFERENCES entries(entry_id)
             )
         ''')
+        # Migrate existing DBs that don't have these columns yet
+        try:
+            c.execute("ALTER TABLE entry_picks ADD COLUMN actual_value REAL DEFAULT NULL")
+        except Exception:
+            pass
+        try:
+            c.execute("ALTER TABLE entry_picks ADD COLUMN was_correct INTEGER DEFAULT NULL")
+        except Exception:
+            pass
         conn.commit()
         conn.close()
 
@@ -170,3 +181,45 @@ class PerformanceTracker:
             'total_profit': row[3] or 0.0,
             'roi': ((row[3] or 0) / (row[2] or 1)) * 100 if (row[2] or 0) > 0 else 0
         }
+    def get_current_bankroll(self, starting_bankroll: float) -> float:
+        """Calculates the real live bankroll from the sum of all P&L in the DB."""
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        c.execute("SELECT SUM(profit_loss) FROM entries WHERE result != 'pending' AND is_demo = 0")
+        row = c.fetchone()
+        conn.close()
+        net_pl = row[0] or 0.0
+        return round(starting_bankroll + net_pl, 2)
+
+    def record_pick_result(self, entry_id: str, player_name: str, actual_value: float, was_correct: bool):
+        """Fix 7: Persist actual graded values to entry_picks for Teacher to consume."""
+        conn = sqlite3.connect(self.db_path)
+        c = conn.cursor()
+        c.execute('''
+            UPDATE entry_picks
+            SET actual_value = ?, was_correct = ?
+            WHERE entry_id = ? AND player_name = ?
+        ''', (actual_value, int(was_correct), entry_id, player_name))
+        conn.commit()
+        conn.close()
+
+    def get_graded_picks_for_learning(self, date_str: str = None) -> list:
+        """Returns all graded entry_picks with actual_value for Teacher consumption."""
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        query = '''
+            SELECT ep.player_name, ep.prop_type, ep.line, ep.over_under,
+                   ep.confidence, ep.actual_value, ep.was_correct, e.date
+            FROM entry_picks ep
+            JOIN entries e ON ep.entry_id = e.entry_id
+            WHERE ep.actual_value IS NOT NULL AND e.is_demo = 0
+        '''
+        params = []
+        if date_str:
+            query += " AND e.date LIKE ?"
+            params.append(f"{date_str}%")
+        c.execute(query, params)
+        rows = [dict(r) for r in c.fetchall()]
+        conn.close()
+        return rows

@@ -60,26 +60,26 @@ def run(date, min_confidence, bankroll, risk, source):
         console.print("[yellow]⚠ No qualifying picks today.[/]")
         return
         
+    # Fix 4: Auto-read live bankroll from DB, using --bankroll as starting capital
+    tracker_pre = PerformanceTracker()
+    live_bankroll = tracker_pre.get_current_bankroll(bankroll)
+    if live_bankroll != bankroll:
+        console.print(f"[bold yellow]💰 Live Bankroll: ${live_bankroll:.2f}[/] (started at ${bankroll:.2f}")
+    
     with console.status("Optimizing Entries and calculating correlations…"):
         corr_engine = CorrelationEngine()
         ev_calc = EVCalculator(corr_engine)
         optimizer = EntryOptimizer(ev_calc)
-        
-        # Generator step
         entries = optimizer.generate_all_entries(picks, min_confidence)
-        
-        # Optimize
-        manager = BankrollManager(bankroll, risk_tolerance=risk)
-        portfolio = optimizer.optimize_portfolio(entries, bankroll, risk)
-        
+        manager = BankrollManager(live_bankroll, risk_tolerance=risk)
+        portfolio = optimizer.optimize_portfolio(entries, live_bankroll, risk)
         for entry in portfolio:
-            entry['recommended_size'] = manager.get_recommended_entry_size(entry, bankroll)
+            entry['recommended_size'] = manager.get_recommended_entry_size(entry, live_bankroll)
 
     print(f"\n{'='*80}")
     print(f"OPTIMIZED PRIZEPICKS ENTRIES FOR {actual_date}")
     print(f"{'='*80}\n")
-    
-    print(f"Starting Bankroll: ${bankroll}")
+    print(f"Live Bankroll: ${live_bankroll:.2f}")
     print(f"Risk Tolerance: {risk.capitalize()}")
     print(f"Entries Generated: {len(portfolio)}\n")
     

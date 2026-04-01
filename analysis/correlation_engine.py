@@ -44,17 +44,59 @@ class CorrelationEngine:
 
     def identify_correlation_type(self, pick1: Any, pick2: Any) -> Tuple[str, float, str]:
         """Match two picks against correlation rules."""
-        p1_type, p2_type = getattr(pick1, 'prop_type', '').lower(), getattr(pick2, 'prop_type', '').lower()
-        p1_team, p2_team = getattr(pick1, 'team', ''), getattr(pick2, 'team', '')
-        
-        # Rule 1: Same team hitters
-        if p1_team and p2_team and p1_team == p2_team and p1_type in ("hits", "total bases", "home runs", "singles", "runs", "rbis") and p2_type in ("hits", "total bases", "home runs", "singles", "runs", "rbis"):
+        p1_type = getattr(pick1, 'prop_type', '').lower()
+        p2_type = getattr(pick2, 'prop_type', '').lower()
+        p1_team = getattr(pick1, 'team', '')
+        p2_team = getattr(pick2, 'team', '')
+        p1_opponent = getattr(pick1, 'opponent', '')
+        p2_opponent = getattr(pick2, 'opponent', '')
+
+        _BATTER_TYPES = {"hits", "total bases", "home runs", "singles", "runs", "rbis"}
+        _PITCHER_TYPES = {"pitcher strikeouts", "strikeouts"}
+
+        p1_is_batter = any(t in p1_type for t in _BATTER_TYPES)
+        p2_is_batter = any(t in p2_type for t in _BATTER_TYPES)
+        p1_is_pitcher = any(t in p1_type for t in _PITCHER_TYPES)
+        p2_is_pitcher = any(t in p2_type for t in _PITCHER_TYPES)
+
+        # Rule 1: Same team hitters — positive correlation (game script benefit)
+        if p1_team and p2_team and p1_team == p2_team and p1_is_batter and p2_is_batter:
             c = self.correlation_rules['same_team_hitters_same_game']
             return c['type'], c['strength'], c['description']
-            
+
+        # Rule 2: Pitcher Ks vs opposing team batter Hits — negative correlation
+        # If a pitcher is facing opposing batters in the same game, Ks hurt hits
+        if p1_is_pitcher and p2_is_batter:
+            if p1_opponent and p2_team and p1_opponent.lower() == p2_team.lower():
+                c = self.correlation_rules['pitcher_strikeouts_vs_team_hits']
+                return c['type'], c['strength'], c['description']
+        if p2_is_pitcher and p1_is_batter:
+            if p2_opponent and p1_team and p2_opponent.lower() == p1_team.lower():
+                c = self.correlation_rules['pitcher_strikeouts_vs_team_hits']
+                return c['type'], c['strength'], c['description']
+
+        # Rule 3: Same-game both pitchers high Ks — negative correlation (unlikely both dominate)
+        if p1_is_pitcher and p2_is_pitcher:
+            same_game = (p1_team and p2_team and p1_opponent and p2_opponent and
+                        (p1_team.lower() == p2_opponent.lower() or p2_team.lower() == p1_opponent.lower()))
+            if same_game:
+                c = self.correlation_rules['same_game_both_pitchers_high_k']
+                return c['type'], c['strength'], c['description']
+
+        # Rule 4: Hitter HR and game total Over — positive correlation
+        if ('home runs' in p1_type and 'total' in p2_type) or ('home runs' in p2_type and 'total' in p1_type):
+            c = self.correlation_rules['hitter_hr_and_game_total_over']
+            return c['type'], c['strength'], c['description']
+
+        # Rule 5: Hitter hits and team runs over — positive correlation
+        if (p1_is_batter and 'total' in p2_type) or (p2_is_batter and 'total' in p1_type):
+            c = self.correlation_rules['hitter_hits_and_team_runs_over']
+            return c['type'], c['strength'], c['description']
+
         # Default neutral
         c = self.correlation_rules['opposing_team_hitters']
         return c['type'], c['strength'], c['description']
+
 
     def calculate_combination_correlation(self, picks_list: List[Any]) -> float:
         """Calculate average pairwise correlation for a combination of picks."""

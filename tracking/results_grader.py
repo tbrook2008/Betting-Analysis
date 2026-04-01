@@ -67,6 +67,14 @@ class ResultsGrader:
                     
                 results.append('hit' if hit else 'miss')
                 
+                # Fix 7: Persist actual result to DB for Teacher to consume later
+                self.tracker.record_pick_result(
+                    entry_id=entry['entry_id'],
+                    player_name=getattr(pick, 'player_name', ''),
+                    actual_value=float(actual),
+                    was_correct=hit
+                )
+                
             entry_type = entry.get('entry_type', 'power_2')
             mult = payouts.get(entry_type, 0.0)
             

@@ -103,14 +103,18 @@ class Teacher:
             accuracy = results["hits"] / results["total"]
             current_m = self.registry["multipliers"].get(cat, 1.0)
             
-            # Logic: Nudge 1-2% based on accuracy above/below 55%
-            nudge = 0.0
-            if accuracy > 0.60: nudge = 0.02   # Hot: increment
-            elif accuracy < 0.40: nudge = -0.02 # Cold: decrement
+        # Logic: Proportional nudge based on distance from 55% baseline accuracy.
+            # A 6% hit rate triggers ~-0.049 penalty. An 80% hit rate triggers +0.025 boost.
+            # This is far more responsive than the old flat ±2% approach.
+            nudge = (accuracy - 0.55) * 0.10
+            
+            # Only apply if meaningful (ignore noise in the 40-60% range)
+            if abs(nudge) < 0.005:
+                nudge = 0.0
             
             new_m = current_m + nudge
             
-            # User Safety Rail: Cap adjustments at ±10% (0.9 to 1.1)
+            # User Safety Rail: Cap adjustments at ±10% (0.90 to 1.10)
             new_m = max(0.90, min(1.10, new_m))
             
             if nudge != 0:

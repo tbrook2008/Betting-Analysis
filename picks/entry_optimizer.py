@@ -14,12 +14,24 @@ class EntryOptimizer:
 
     def generate_all_entries(self, picks_list: List[Any], min_confidence: int = 60) -> List[Dict[str, Any]]:
         """Generate all positive EV entries from given picks."""
-        # 1. Filter out high-variance Home Runs entirely.
+        # Filter out high-variance Home Runs entirely.
         safe_picks = [p for p in picks_list if getattr(p, 'prop_type', '').lower() != 'home runs']
         
         # Sort by confidence and take top 15 to cap combinations at ~5000 max (preventing 7m+ combos)
         filtered_picks = sorted([p for p in safe_picks if getattr(p, 'confidence', 0) >= min_confidence], 
                                 key=lambda x: getattr(x, 'confidence', 0), reverse=True)[:15]
+
+        # Fix 6: Market implied-probability filter
+        # Only keep picks where our model confidence beats the market's implied odds by 5%+.
+        # American odds from the pick's signal_contributions if available.
+        def _has_model_edge(pick) -> bool:
+            implied_prob = getattr(pick, 'market_implied_prob', None)
+            if implied_prob is None:
+                return True  # No market data available — keep the pick
+            model_prob = getattr(pick, 'confidence', 50) / 100.0
+            return (model_prob - implied_prob) >= 0.05  # require at least 5% edge
+        
+        filtered_picks = [p for p in filtered_picks if _has_model_edge(p)]
                                 
         entries = []
         # PrizePicks supports 2-6 picks per entry

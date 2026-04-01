@@ -199,6 +199,18 @@ def score(
         if l10_hits >= 0.8: raw_score += 2
         if l10_hits <= 0.2: raw_score -= 2
 
+    # ── [NEW] Line-Difficulty Penalty ────────────────────────────────────────
+    # Higher prop lines are harder to clear — penalize confidence proportionally.
+    if line is not None and line > 0:
+        if prop_type == "pitcher_ks" and line > 9.0:
+            penalty = (line - 9.0) * 2.5   # -2.5 pts per K above 9.0
+            raw_score -= penalty
+            reasoning.append(f"📉 Line difficulty penalty: {penalty:.1f}pts (K line {line} > 9.0)")
+        elif prop_type in ["hits", "total_bases"] and line > 1.5:
+            penalty = (line - 1.5) * 2.0   # -2.0 pts per unit above 1.5 hits
+            raw_score -= penalty
+            reasoning.append(f"📉 Line difficulty penalty: {penalty:.1f}pts (line {line} > 1.5)")
+
     # ── [NEW] Autonomous Learning Adjustment ────────────────────────────────
     # Apply the multiplier learned by the Teacher from previous results
     learned_m = DYNAMIC_MULTIPLIERS.get(prop_type, 1.0)
