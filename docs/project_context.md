@@ -1,4 +1,4 @@
-# MLB Betting Analysis | Project Status — March 31, 2026
+# MLB Betting Analysis | Project Status — April 01, 2026
 
 ## 🎯 Current Strategy: The Autonomous Quantitative Engine
 The system has fully transitioned from a simple high-variance model to a self-teaching **Expected Value (EV) Quantitative Trading Engine** built explicitly to exploit PrizePicks payouts and mathematically react to its own failures.
@@ -23,9 +23,9 @@ The system has fully transitioned from a simple high-variance model to a self-te
 | **`tracking/performance_tracker.py`** | SQLite backend storing every generated play. |
 
 ## 📈 Performance & State Summary
-- **Current Balance**: $30.00 
+- **Current Balance**: $28.50
 - **System Version**: v3.0 (Autonomous EV Engine)
-- **Active State**: System recently suffered a $28 loss on highly-variant manual `home_run` props. The `Teacher` scraped the boxscores, detected a massive miss-rate (only 6% accuracy), and autonomously degraded the `home_run` multiplier to 0.98. Today's slate successfully filtered out HR risk and pivoted to Pitcher Strikeouts.
+- **Active State**: The engine generated a Flex 3 ticket focused exclusively on `pitcher_ks` to mitigate the AI's recent downgraded `home_runs` multiplier. After games concluded, `results_grader.py` evaluated the entry natively against MLB live box scores and cleanly generated a fractional Flex-3 rule loss (`-$1.50` off a `$3.00` wager) verifying the `BankrollManager` and DB handle partial PrizePicks flex payouts perfectly without failure.
 
 ## 🛠️ CLI Architecture (`click`)
 - **`python main.py run --bankroll 30 --risk conservative`**: Generates and optimizes max EV portfolio for today.
