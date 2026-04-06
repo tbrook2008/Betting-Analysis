@@ -147,12 +147,9 @@ def score(
 
     # If we have a projected value vs line, blend that in
     if projected_value is not None and line is not None and line > 0:
-        # Logistic-style boost: larger discrepancies provide diminishing returns
+        # Logistic-style boost
         diff_pct = (projected_value - line) / line
-        # Map diff_pct to a boost in [-1, 1]
-        # e.g. 20% diff -> ~0.5 boost
         proj_boost = float(np.tanh(diff_pct * 3.0)) 
-        
         # Blend: 70% signal-based, 30% projection-based
         raw_score = raw_score * 0.7 + (50.0 + proj_boost * 50.0) * 0.3
         
@@ -164,6 +161,32 @@ def score(
 
     # Apply confidence cap
     raw_score = float(np.clip(raw_score, 100 - config.MAX_CONFIDENCE, config.MAX_CONFIDENCE))
+
+    # ── [NEW] Market Edge Signal (DraftKings Odds) ──────────────────────────
+    # If we have DraftKings odds, use them to boost/nerf the confidence.
+    # Implied Probability (IP) of -110 is ~52.4%.
+    over_odds = signals.get("over_odds")
+    under_odds = signals.get("under_odds")
+    if over_odds is not None or under_odds is not None:
+        rec = "OVER" if raw_score > 50 else "UNDER"
+        odds = over_odds if rec == "OVER" else under_odds
+        
+        if odds is not None:
+            # Convert American to Implied Prob
+            if odds > 0:
+                ip = 100 / (odds + 100)
+            else:
+                ip = abs(odds) / (abs(odds) + 100)
+            
+            # Boost if IP > 53% (Standard house juice threshold)
+            if ip > 0.53:
+                boost = (ip - 0.53) * 50.0  # +1 point per 2% IP advantage
+                raw_score += boost
+                reasoning.append(f"📈 Market Edge: DraftKings favors {rec} ({ip:.1%})")
+            elif ip < 0.47:
+                penalty = (0.47 - ip) * 40.0
+                raw_score -= penalty
+                reasoning.append(f"📉 Market Warning: DraftKings favors opposite ({ip:.1%})")
 
     # ── [NEW] Stability & Variance Scaling ──────────────────────────────────
     # Apply multiplier to distance from 50 (neutral) based on prop variance

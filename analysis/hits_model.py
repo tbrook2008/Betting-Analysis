@@ -110,13 +110,14 @@ def generate_total_bases_signals(
         pitcher_throws, player_id, opp_pitcher_id
     )
 
-    # Add power-specific Statcast signals
+    # ── [NEW] Add Statcast to HITS/TB ────────────────────────────────────────
     sc = mlb.get_statcast_batter_stats(player_name)
     if sc:
-        if sc.get("barrel_pct"):
-            signals["barrel_pct"] = sc["barrel_pct"]
         if sc.get("hard_hit_pct"):
             signals["hard_hit_pct"] = sc["hard_hit_pct"]
+            
+        if sc.get("barrel_pct"):
+            signals["barrel_pct"] = sc["barrel_pct"]
 
         # Only fetch detail if we really want fly_ball_pct (expensive)
         detail = mlb.get_statcast_batter_detail(player_name)

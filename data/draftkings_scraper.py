@@ -53,23 +53,35 @@ HEADERS = {
 def get_draftkings_lines() -> pd.DataFrame:
     """
     Fetch MLB player prop lines from The Odds API (DraftKings bookmaker).
-
-    Returns a DataFrame with columns:
-        player_name, prop_type, line_score, over_odds, under_odds,
-        home_team, away_team, game_time, source
+    Uses the per-event endpoint for player props as required by The Odds API.
     """
     if not config.ODDS_API_KEY:
-        log.warning(
-            "ODDS_API_KEY not set — DraftKings lines unavailable. "
-            "Add your key to .env to enable."
-        )
+        log.warning("ODDS_API_KEY not set — DraftKings lines unavailable.")
+        return pd.DataFrame()
+
+    # 1. Fetch today's events to get IDs
+    events = _fetch_events()
+    if not events:
+        log.warning("DraftKings: No MLB events found for today.")
         return pd.DataFrame()
 
     all_rows: list[dict] = []
+    
+    # 2. Fetch props for each event (Parallelized to avoid slow sequential calls)
+    import os
+    from concurrent.futures import ThreadPoolExecutor
+    
+    markets_str = ",".join(_PLAYER_PROP_MARKETS)
+    
+    def _fetch_event_props(event: dict) -> list[dict]:
+        event_id = event.get("id")
+        if not event_id: return []
+        return _fetch_event_market(event_id, markets_str)
 
-    for market in _PLAYER_PROP_MARKETS:
-        rows = _fetch_market(market)
-        all_rows.extend(rows)
+    with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as executor:
+        results = list(executor.map(_fetch_event_props, events))
+        for rows in results:
+            all_rows.extend(rows)
 
     if not all_rows:
         log.warning("DraftKings: no player prop data returned.")
@@ -83,83 +95,92 @@ def get_draftkings_lines() -> pd.DataFrame:
     return df
 
 
-def _fetch_market(market: str) -> list[dict]:
-    """Fetch a single player prop market from The Odds API."""
-    url = f"{config.ODDS_API_BASE}/sports/baseball_mlb/odds"
+def _fetch_events() -> list[dict]:
+    """Fetch today's MLB events from The Odds API."""
+    url = f"{config.ODDS_API_BASE}/sports/baseball_mlb/events"
+    params = {"apiKey": config.ODDS_API_KEY}
+    try:
+        resp = httpx.get(url, params=params, headers=HEADERS, timeout=10)
+        resp.raise_for_status()
+        return resp.json()
+    except Exception as exc:
+        log.error(f"Failed to fetch MLB events: {exc}")
+        return []
+
+
+def _fetch_event_market(event_id: str, markets: str) -> list[dict]:
+    """Fetch all player prop markets for a specific event."""
+    url = f"{config.ODDS_API_BASE}/sports/baseball_mlb/events/{event_id}/odds"
     params = {
         "apiKey": config.ODDS_API_KEY,
         "regions": "us",
-        "markets": market,
+        "markets": markets,
         "bookmakers": "draftkings",
         "oddsFormat": "american",
     }
     try:
         resp = httpx.get(url, params=params, headers=HEADERS, timeout=15)
+        if resp.status_code == 429:
+            log.warning("Odds API Rate Limited (429). Retrying later...")
+            return []
         resp.raise_for_status()
-        games = resp.json()
-    except httpx.HTTPStatusError as e:
-        log.error(f"Odds API error for market={market}: {e.response.status_code}")
-        return []
+        data = resp.json()
+        return _parse_event_response(data)
     except Exception as exc:
-        log.error(f"Odds API fetch failed for market={market}: {exc}")
+        log.debug(f"Odds API fetch failed for event={event_id}: {exc}")
         return []
 
-    return _parse_odds_api_response(games, market)
 
-
-def _parse_odds_api_response(games: list[dict], market: str) -> list[dict]:
-    """Parse The Odds API response for a player prop market."""
-    prop_label = _MARKET_LABEL_MAP.get(market, market)
+def _parse_event_response(event_data: dict) -> list[dict]:
+    """Parse a single event response from The Odds API."""
     rows: list[dict] = []
+    home_team = event_data.get("home_team", "")
+    away_team = event_data.get("away_team", "")
+    game_time = event_data.get("commence_time", "")
 
-    for game in games:
-        home_team = game.get("home_team", "")
-        away_team = game.get("away_team", "")
-        game_time = game.get("commence_time", "")
+    bookmakers = event_data.get("bookmakers", [])
+    dk = next((b for b in bookmakers if b.get("key") == "draftkings"), None)
+    if not dk:
+        return []
 
-        bookmakers = game.get("bookmakers", [])
-        dk = next((b for b in bookmakers if b.get("key") == "draftkings"), None)
-        if not dk:
-            continue
+    for mkt in dk.get("markets", []):
+        market_key = mkt.get("key", "")
+        prop_label = _MARKET_LABEL_MAP.get(market_key, market_key)
+        
+        for outcome in mkt.get("outcomes", []):
+            name = outcome.get("name", "")       # "Over" or "Under"
+            description = outcome.get("description", "")  # player name
+            point = outcome.get("point")          # the line
+            price = outcome.get("price")          # American odds
 
-        for mkt in dk.get("markets", []):
-            if mkt.get("key") != market:
+            if not description or point is None:
                 continue
-            for outcome in mkt.get("outcomes", []):
-                name = outcome.get("name", "")       # "Over" or "Under"
-                description = outcome.get("description", "")  # player name
-                point = outcome.get("point")          # the line
-                price = outcome.get("price")          # American odds
 
-                if not description or point is None:
-                    continue
-
-                # Check if we already have a row for this player
-                existing = next(
-                    (r for r in rows if r["player_name"] == description
-                     and r["prop_type"] == prop_label
-                     and r["game_time"] == game_time),
-                    None
-                )
-                if existing:
-                    if name == "Over":
-                        existing["over_odds"] = price
-                    elif name == "Under":
-                        existing["under_odds"] = price
-                else:
-                    row: dict = {
-                        "player_name": description,
-                        "prop_type": prop_label,
-                        "line_score": float(point),
-                        "over_odds": price if name == "Over" else None,
-                        "under_odds": price if name == "Under" else None,
-                        "home_team": home_team,
-                        "away_team": away_team,
-                        "game_time": game_time,
-                        "source": "DraftKings",
-                    }
-                    rows.append(row)
-
+            # Check if we already have a row for this player/prop/game
+            existing = next(
+                (r for r in rows if r["player_name"] == description
+                 and r["prop_type"] == prop_label
+                 and r["game_time"] == game_time),
+                None
+            )
+            if existing:
+                if name == "Over":
+                    existing["over_odds"] = price
+                elif name == "Under":
+                    existing["under_odds"] = price
+            else:
+                row: dict = {
+                    "player_name": description,
+                    "prop_type": prop_label,
+                    "line_score": float(point),
+                    "over_odds": price if name == "Over" else None,
+                    "under_odds": price if name == "Under" else None,
+                    "home_team": home_team,
+                    "away_team": away_team,
+                    "game_time": game_time,
+                    "source": "DraftKings",
+                }
+                rows.append(row)
     return rows
 
 

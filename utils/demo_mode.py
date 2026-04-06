@@ -12,9 +12,47 @@ class DemoMode:
         
     def run_demo_picks(self, date_str: str) -> List[Dict[str, Any]]:
         """Simulates running the standard flow and saves as `is_demo=True`."""
-        # Due to structural isolation in Phase 4, we mock this hook. 
-        # In production, this pulls directly from `picks/pick_generator`.
-        return []
+        import datetime
+        from picks.pick_generator import generate_daily_picks
+        from analysis.correlation_engine import CorrelationEngine
+        from analysis.ev_calculator import EVCalculator
+        from picks.entry_optimizer import EntryOptimizer
+        from tracking.bankroll_manager import BankrollManager
+        
+        actual_date = datetime.date.fromisoformat(date_str)
+        # Use baseline config settings for demo
+        import config
+        
+        picks = generate_daily_picks(date=actual_date, min_confidence=config.MIN_CONFIDENCE)
+        if not picks:
+            return []
+            
+        corr_engine = CorrelationEngine()
+        ev_calc = EVCalculator(corr_engine)
+        optimizer = EntryOptimizer(ev_calc)
+        
+        # We'll use a fixed $150 bankroll for historical demos
+        demo_bankroll = 150.0
+        entries = optimizer.generate_all_entries(picks, config.MIN_CONFIDENCE)
+        manager = BankrollManager(demo_bankroll, risk_tolerance='conservative')
+        
+        portfolio = optimizer.optimize_portfolio(entries, demo_bankroll, 'conservative')
+        for entry in portfolio:
+            entry['recommended_size'] = manager.get_recommended_entry_size(entry, demo_bankroll)
+            # Log to DB as demo
+            self.tracker.log_entry(entry, is_demo=True)
+            
+        # ── v4.0: Save raw picks so Teacher can learn even from 0 portfolio slates ────
+        import json
+        from pathlib import Path
+        Path("output").mkdir(exist_ok=True)
+        picks_out = Path("output") / f"picks_{date_str}.json"
+        picks_out.write_text(json.dumps({
+            "date": date_str,
+            "picks": [getattr(p, 'to_dict', lambda: {})() for p in picks]
+        }, indent=2))
+        
+        return portfolio
         
     def grade_demo_picks(self, date_str: str):
         """Grades demo picks specifically to separate from real bets."""

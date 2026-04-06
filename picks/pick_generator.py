@@ -60,10 +60,13 @@ _PROP_TYPE_MAP: dict[str, str] = {
     # PrizePicks label → internal key
     "hits": "hits",
     "total bases": "total_bases",
-    "hits+runs+rbis": "hits",
+    "hits+runs+rbis": "hits",      # Combined hitter stats use hits model
     "home runs": "home_runs",
     "pitcher strikeouts": "pitcher_ks",
     "strikeouts": "pitcher_ks",
+    "pitching outs": "pitcher_ks", # Outs use pitcher quality model
+    "earned runs allowed": "pitcher_ks", # ERA uses pitcher quality model (UNDER)
+    "walks": "hits",               # Batter walks use hitting model
     "runs": "hits",
     "rbis": "hits",
     # DraftKings labels
@@ -71,6 +74,7 @@ _PROP_TYPE_MAP: dict[str, str] = {
     "batter_home_runs": "home_runs",
     "batter_total_bases": "total_bases",
     "pitcher_strikeouts": "pitcher_ks",
+    "pitcher_outs": "pitcher_ks",
 }
 
 
@@ -128,17 +132,37 @@ def generate_daily_picks(
         log.warning("No lines found from any source.")
         return []
 
-    log.info(f"Processing {len(all_lines)} total prop lines")
+    # ── 3. Build Odds Lookup ─────────────────────────────────────────────────
+    # Create a mapping for quick lookup: (player, prop) -> {over_odds, under_odds}
+    odds_lookup: dict[tuple[str, str], dict] = {}
+    dk_lines = [l for l in all_lines if l.get("source") == "DraftKings"]
+    for row in dk_lines:
+        key = (str(row["player_name"]).lower(), str(row["prop_type"]).lower())
+        odds_lookup[key] = {
+            "over_odds": row.get("over_odds"),
+            "under_odds": row.get("under_odds"),
+            "line": row.get("line_score")
+        }
 
-    # ── 3. Score each line (Parallelized) ────────────────────────────────────
+    log.info(f"Processing {len(all_lines)} total prop lines")
     import os
     from concurrent.futures import ThreadPoolExecutor
     picks: list[PickResult] = []
 
     def _safe_score(line_row: dict) -> PickResult | None:
         try:
+            # Inject DraftKings odds into the row if this is a PrizePicks line
+            if line_row.get("source") == "PrizePicks":
+                key = (line_row["player_name"].lower(), line_row["prop_type"].lower())
+                dk_data = odds_lookup.get(key)
+                if dk_data:
+                    line_row["over_odds"] = dk_data["over_odds"]
+                    line_row["under_odds"] = dk_data["under_odds"]
+            
             return _score_line(line_row, game_ctx)
         except Exception as exc:
+            log.debug(f"Skipped line for {line_row.get('player_name', '?')}: {exc}")
+            return None
             log.debug(f"Skipped line for {line_row.get('player_name', '?')}: {exc}")
             return None
 
@@ -273,6 +297,10 @@ def _score_line(row: dict, game_ctx: dict[str, dict]) -> PickResult | None:
         return None
 
     # ── Score ────────────────────────────────────────────────────────────────
+    # Inject odds into signals for the scorer
+    signals["over_odds"] = row.get("over_odds")
+    signals["under_odds"] = row.get("under_odds")
+    
     result = scorer.score(
         signals=signals,
         prop_type=prop_key,

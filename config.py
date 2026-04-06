@@ -51,12 +51,13 @@ MAX_CONFIDENCE: int = 95          # Cap to avoid overconfidence
 # Signal Weights — Hits / Total Bases Model
 # ─────────────────────────────────────────────────────────────────────────────
 HITS_WEIGHTS = {
-    "rolling_avg_7":       0.30,
-    "rolling_avg_14":      0.20,
+    "rolling_avg_7":       0.25,
+    "rolling_avg_14":      0.15,
     "rolling_avg_30":      0.10,
-    "handedness_split":    0.20,
+    "handedness_split":    0.15,
+    "hard_hit_pct":        0.15,   # [NEW] Add dynamic Statcast factor
     "park_hit_factor":     0.10,
-    "opp_pitcher_k_pct":   0.10,   # high K% → fewer hits → negative signal
+    "opp_pitcher_k_pct":   0.10,
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -208,7 +209,7 @@ LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO").upper()
 # ─────────────────────────────────────────────────────────────────────────────
 
 PRIZEPICKS_CONFIG = {
-    'min_confidence_threshold': 60,
+    'min_confidence_threshold': 58,    # Surfaces more Hit/K plays while keeping high bar
     'min_ev_threshold': 0.0,
     'min_roi_threshold': 5.0,
     'max_correlation_negative': -0.3,

@@ -57,41 +57,53 @@ class Teacher:
 
     def run_daily_retro(self, specific_date: datetime.date = None):
         """Evaluate yesterday's (or given date's) performance and tune weights."""
+        from tracking.performance_tracker import PerformanceTracker
+        tracker = PerformanceTracker()
+        
         yesterday = specific_date or (datetime.date.today() - datetime.timedelta(days=1))
         y_str = yesterday.isoformat()
         
-        picks_file = Path("output") / f"picks_{y_str}.json"
-        if not picks_file.exists():
-            log.warning(f"No picks file found for {y_str}. Skipping retrospective.")
-            self.registry["last_run_date"] = datetime.date.today().isoformat()
-            self._save_registry()
-            return
-
-        log.info(f"🎓 Running AI Retrospective for {y_str}...")
-        data = json.loads(picks_file.read_text())
-        picks = data.get("picks", [])
+        # v4.0: Learning first tries Performance DB, falls back to JSON
+        picks = tracker.get_graded_picks_for_learning(y_str)
+        
+        if not picks:
+            picks_file = Path("output") / f"picks_{y_str}.json"
+            if not picks_file.exists():
+                log.warning(f"No graded picks (DB or JSON) found for {y_str}. Skipping retrospective.")
+                if specific_date is None:
+                    self.registry["last_run_date"] = datetime.date.today().isoformat()
+                    self._save_registry()
+                return
+            
+            log.info(f"🎓 No DB entries for {y_str}, loading raw picks from JSON...")
+            data = json.loads(picks_file.read_text())
+            picks = data.get("picks", [])
+        else:
+            log.info(f"🎓 Running AI Retrospective from DB for {y_str} ({len(picks)} picks)...")
         
         # Category-based tracking
         stats = {k: {"hits": 0, "total": 0} for k in self.registry["multipliers"]}
         
         for p in picks:
             category = p.get("prop_type_key")
+            if not category:
+                category = self._map_prop_to_key(p.get("prop_type", ""))
+            
             if category not in stats: continue
             
-            # ── 1. Fetch Result from MLB API ─────────────────────────────────
-            actual_value = self._get_result(p["player_name"], yesterday, category)
-            if actual_value is None: continue
-            
-            # ── 2. Grade Success ─────────────────────────────────────────────
+            # ── 1. Resolve Winner (DB or On-the-fly) ────────────────────────
             is_winner = False
-            line = p.get("line", 0)
-            rec = p.get("recommendation", "OVER")
-            
-            if rec == "OVER":
-                is_winner = actual_value > line
+            if "was_correct" in p:
+                is_winner = bool(p.get("was_correct", False))
             else:
-                is_winner = actual_value < line
+                # Grade on-the-fly for raw JSON picks (Backtest mode)
+                actual_value = self._get_result(p.get("player_name", ""), yesterday, category)
+                if actual_value is None: continue
                 
+                line = p.get("line", 0)
+                rec = p.get("recommendation", "OVER")
+                is_winner = (actual_value > line) if rec == "OVER" else (actual_value < line)
+            
             stats[category]["total"] += 1
             if is_winner:
                 stats[category]["hits"] += 1
@@ -168,6 +180,14 @@ class Teacher:
                 return singles + (2*d) + (3*t) + (4*hr)
         
         return None
+
+    def _map_prop_to_key(self, prop_type: str) -> str:
+        s = prop_type.lower()
+        if "strikeout" in s: return "pitcher_ks"
+        if "home run" in s: return "home_runs"
+        if "total base" in s: return "total_bases"
+        if "hit" in s: return "hits"
+        return "hits"
 
 def get_multipliers() -> Dict[str, float]:
     """Helper for confidence_scorer.py."""

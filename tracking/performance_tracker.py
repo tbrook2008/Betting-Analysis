@@ -213,7 +213,7 @@ class PerformanceTracker:
                    ep.confidence, ep.actual_value, ep.was_correct, e.date
             FROM entry_picks ep
             JOIN entries e ON ep.entry_id = e.entry_id
-            WHERE ep.actual_value IS NOT NULL AND e.is_demo = 0
+            WHERE ep.actual_value IS NOT NULL
         '''
         params = []
         if date_str:

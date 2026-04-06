@@ -142,12 +142,13 @@ def get_batter_game_logs(player_id: int, last_n: int = 30) -> pd.DataFrame:
     if not stats:
         log.warning(f"No hitting stats found for player_id={player_id}")
         return pd.DataFrame()
-    splits = stats[0].get("splits", [])
+    
     rows = []
-    for s in splits[-last_n:]:
-        stat = s.get("stat", {})
+    # For gameLog, the 'stats' list itself contains the individual games
+    for entry in stats[-last_n:]:
+        stat = entry.get("stats", {})
         rows.append({
-            "date": s.get("date"),
+            "date": entry.get("date"),
             "H": int(stat.get("hits", 0)),
             "2B": int(stat.get("doubles", 0)),
             "3B": int(stat.get("triples", 0)),
@@ -235,7 +236,8 @@ def get_batter_splits(player_id: int) -> dict[str, dict]:
     raw = statsapi.player_stat_data(player_id, group="hitting", type="vsTeamTotal5Y")
     # Fall back to statSplits
     splits_raw = statsapi.player_stat_data(player_id, group="hitting", type="statSplits")
-    splits = splits_raw.get("stats", [{}])[0].get("splits", [])
+    stats = splits_raw.get("stats", [])
+    splits = stats[0].get("splits", []) if stats else []
     result: dict[str, dict] = {"vs_L": {}, "vs_R": {}}
     for s in splits:
         split_code = s.get("split", {}).get("code", "")
