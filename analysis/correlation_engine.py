@@ -12,8 +12,16 @@ class CorrelationEngine:
         self.correlation_rules = {
             'same_team_hitters_same_game': {
                 'type': 'positive',
-                'strength': 0.25,
+                # [v5.2] Boosted from 0.25 → 0.35: same-game hitters are MORE
+                # correlated than we thought (shared ABs, pitcher fatigue effects)
+                'strength': 0.35,
                 'description': 'Hitters from same team benefit from game script'
+            },
+            'game_script_stack_3plus': {
+                'type': 'positive',
+                # Bonus for 3+ hitters from same team: pitcher is likely getting shelled
+                'strength': 0.50,
+                'description': '3+ same-team hitters = pitcher getting lit up'
             },
             'pitcher_strikeouts_vs_team_hits': {
                 'type': 'negative',
@@ -41,6 +49,7 @@ class CorrelationEngine:
                 'description': 'Different teams, no correlation'
             }
         }
+
 
     def identify_correlation_type(self, pick1: Any, pick2: Any) -> Tuple[str, float, str]:
         """Match two picks against correlation rules."""
@@ -102,6 +111,15 @@ class CorrelationEngine:
         """Calculate average pairwise correlation for a combination of picks."""
         if len(picks_list) < 2:
             return 0.0
+
+        # [v5.2] Game Script Stack Bonus: 3+ hitters from same team get a big boost
+        from collections import Counter
+        _BATTER_TYPES = {"hits", "total bases", "home runs", "singles", "runs", "rbis"}
+        team_batter_counts = Counter(
+            getattr(p, 'team', '') for p in picks_list
+            if any(t in getattr(p, 'prop_type', '').lower() for t in _BATTER_TYPES)
+        )
+        has_stack_bonus = any(cnt >= 3 for cnt in team_batter_counts.values())
             
         total_strength = 0.0
         pairs = 0
@@ -111,7 +129,14 @@ class CorrelationEngine:
                 total_strength += strength
                 pairs += 1
                 
-        return total_strength / pairs if pairs > 0 else 0.0
+        avg = total_strength / pairs if pairs > 0 else 0.0
+
+        # Apply stack bonus on top of pairwise average
+        if has_stack_bonus:
+            stack_rule = self.correlation_rules['game_script_stack_3plus']
+            avg += stack_rule['strength'] * 0.3  # Additive boost
+
+        return avg
 
     def adjust_probability_for_correlation(self, independent_prob: float, correlation_score: float) -> float:
         """Adjust independent prob based on correlation strength."""

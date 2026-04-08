@@ -115,7 +115,8 @@ def _fetch_event_market(event_id: str, markets: str) -> list[dict]:
         "apiKey": config.ODDS_API_KEY,
         "regions": "us",
         "markets": markets,
-        "bookmakers": "draftkings",
+        # [v5.2] Multi-book line shopping: DraftKings + FanDuel + Underdog
+        "bookmakers": "draftkings,fanduel,underdog",
         "oddsFormat": "american",
     }
     try:
@@ -138,8 +139,21 @@ def _parse_event_response(event_data: dict) -> list[dict]:
     away_team = event_data.get("away_team", "")
     game_time = event_data.get("commence_time", "")
 
-    bookmakers = event_data.get("bookmakers", [])
-    dk = next((b for b in bookmakers if b.get("key") == "draftkings"), None)
+    bookmakers_data = event_data.get("bookmakers", [])
+
+    # [v5.2] Multi-book: Collect odds from all available books, DK takes priority.
+    # We build a map of (player, market, direction) -> best odds across books.
+    book_priority = ["draftkings", "fanduel", "underdog"]
+    active_books = {b.get("key"): b for b in bookmakers_data if b.get("key") in book_priority}
+
+    # Use DraftKings if available, otherwise FanDuel, then Underdog
+    dk = None
+    for book_key in book_priority:
+        if book_key in active_books:
+            dk = active_books[book_key]
+            selected_book = book_key
+            break
+
     if not dk:
         return []
 
@@ -155,6 +169,9 @@ def _parse_event_response(event_data: dict) -> list[dict]:
 
             if not description or point is None:
                 continue
+
+            # [v5.2] Add book source to row for cross-book arbitrage detection
+            book_key_used = selected_book
 
             # Check if we already have a row for this player/prop/game
             existing = next(

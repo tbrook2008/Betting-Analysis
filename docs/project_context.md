@@ -1,16 +1,19 @@
-# MLB Betting Analysis | Project Status — April 08, 2026 (v5.1)
+# MLB Betting Analysis | Project Status — April 08, 2026 (v5.2)
 
 ## 🎯 Current Strategy: The Autonomous Quantitative Engine
 The system has fully transitioned from a simple high-variance model to a self-teaching **Expected Value (EV) Quantitative Trading Engine** built explicitly to exploit PrizePicks payouts and mathematically react to its own failures.
 
 ### Core Architecture Pillars:
-1. **Correlation Mathematics (`analysis/correlation_engine.py`)**: Mathematically scales independent probabilities into reliant permutations (e.g. boosting the probability if a ticket pairs batters from the same game).
-2. **Binomial Distributions (`analysis/ev_calculator.py`)**: Utilizes statistical combinatorics (`scipy.special.comb`) to determine the exact Expected Value and ROIs of 3, 4, 5, and 6-leg combinations hitting the threshold (N or N-1).
-3. **Kelly Criterion Bankroll Protection (`tracking/bankroll_manager.py`)**: Entry-type-aware Kelly sizing. Flex-6 entries receive up to 20% of bankroll; Power-2/3 entries are hard-capped at 5%.
-4. **Live Verification (`tracking/results_grader.py`)**: The system no longer mocks data. It systematically scrapes the live MLB API (`statsapi.boxscore_data`) each morning to fetch explicit outcomes for graded tickets.
-5. **The Teacher (`analysis/teacher.py`)**: *The active AI feedback loop.* After verifying MLB box scores, the Teacher checks its accuracy. If the AI missed its projections on a specific prop type (e.g., Home Runs), the algorithm dynamically nerfs its confidence multiplier for that prop in `dynamic_weights.json` so it scales back risk mechanically going forward.
-6. **Market Edge Signal (`analysis/confidence_scorer.py`)**: Converts DraftKings American odds into implied probabilities. A DraftKings IP > 53% provides a confidence boost; IP < 47% applies a penalty. This uses the `/events/{eventId}/odds` endpoint for accurate per-prop data.
-7. **Wide-Scope Prop Coverage (`picks/pick_generator.py`)**: Now goes beyond Home Runs to target Hits, Runs, RBIs, Total Bases, and Pitcher Strikeouts — driven by the discovery that Hits props are statistically more stable and profitable.
+1. **Correlation Mathematics (`analysis/correlation_engine.py`)**: Mathematically scales independent probabilities into reliant permutations. Now includes a **Game Script Stack Bonus (+0.50)** for 3+ same-team hitters.
+2. **Binomial Distributions (`analysis/ev_calculator.py`)**: Utilizes statistical combinatorics to determine exact EV and ROIs for all PrizePicks entry types.
+3. **Kelly Criterion + Streak Staking (`tracking/bankroll_manager.py`)**: Entry-type-aware Kelly sizing, plus **Win-Streak Progressive Staking** (auto-scales based on Teacher's accuracy) and **Fibonacci Staking** (compound on hot runs, hard-reset on losses).
+4. **Live Verification (`tracking/results_grader.py`)**: Scrapes live MLB API (`statsapi.boxscore_data`) each morning.
+5. **The Teacher (`analysis/teacher.py`)**: Autonomous accuracy feedback loop. Dynamically tunes `dynamic_weights.json` per prop category.
+6. **Market Edge Signal (`analysis/confidence_scorer.py`)**: Multi-book (DraftKings + FanDuel + Underdog) implied probability modifier via per-event Odds API endpoint.
+7. **Wide-Scope Prop Coverage (`picks/pick_generator.py`)**: Hits, Runs, RBIs, Total Bases, Pitcher Strikeouts — beyond HR only.
+8. **Weather Intelligence (`data/weather_client.py`)**: Game-day wind/temp signals from OpenWeatherMap. Boosts HR/hits on tailwind days; penalizes on headwinds.
+9. **Lineup Intelligence (`data/lineup_client.py`)**: Confirmed batting order signals. Top-3 hitters get PA boost; bottom-order and DNPs flagged.
+10. **Automated Daily Runner (`scripts/com.betting.mlb.daily.plist`)**: macOS LaunchAgent fires `main.py run` at 11:00 AM ET before slate lock.
 
 ## 🧠 System Index
 

@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- 
+        MLB Betting Engine — Automated Daily Runner
+        ============================================
+        Runs "python main.py run" every day at 11:00 AM ET (before most slates lock).
+        
+        INSTALLATION:
+          cp com.betting.mlb.daily.plist ~/Library/LaunchAgents/
+          launchctl load ~/Library/LaunchAgents/com.betting.mlb.daily.plist
+        
+        UNINSTALL:
+          launchctl unload ~/Library/LaunchAgents/com.betting.mlb.daily.plist
+        
+        LOGS: /tmp/betting_daily.log  (stdout)
+              /tmp/betting_daily_err.log  (stderr)
+    -->
+    <key>Label</key>
+    <string>com.betting.mlb.daily</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <!-- *** UPDATE THIS PATH to match your Python venv *** -->
+        <string>/Users/tbrook/Desktop/Betting Analysis/.venv/bin/python</string>
+        <string>main.py</string>
+        <string>run</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/tbrook/Desktop/Betting Analysis</string>
+
+    <!-- Run at 11:00 AM ET every day (15:00 UTC) -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>11</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PYTHONPATH</key>
+        <string>/Users/tbrook/Desktop/Betting Analysis</string>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/betting_daily.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/betting_daily_err.log</string>
+
+    <!-- Retry if job fails -->
+    <key>KeepAlive</key>
+    <false/>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

@@ -3,6 +3,7 @@ tracking/bankroll_manager.py — Manage Kelly Criterion sizing and risk threshol
 """
 from datetime import datetime
 from typing import Dict, Any, List
+import json, os, pathlib
 
 class BankrollManager:
     """Manages bankroll, unit sizing, and risk controls."""
@@ -18,7 +19,42 @@ class BankrollManager:
             'moderate': 0.50,      # Half Kelly
             'aggressive': 1.0      # Full Kelly
         }
-        
+
+    # ── [v5.2] Win-Streak Progressive Staking ────────────────────────────────
+    def get_streak_multiplier(self) -> float:
+        """
+        Reads the Teacher's dynamic_weights.json to detect a hot streak.
+        If the Hits model has been accuracy >= 70% (multiplier >= 1.05),
+        scale up the Flex-6 stake by a progressive factor:
+          multiplier >= 1.05 → 1.5x stake
+          multiplier >= 1.08 → 2.0x stake (max)
+        On a cold streak (multiplier <= 0.93), scale down to 0.75x.
+        """
+        try:
+            weights_path = pathlib.Path(__file__).parent.parent / "data" / "dynamic_weights.json"
+            if not weights_path.exists():
+                return 1.0
+            data = json.loads(weights_path.read_text())
+            m = data.get("multipliers", {}).get("hits", 1.0)
+            if m >= 1.08:  return 2.0   # Very hot — double up
+            if m >= 1.05:  return 1.5   # Hot — 1.5x
+            if m <= 0.93:  return 0.75  # Cold — pull back
+            return 1.0                  # Neutral
+        except Exception:
+            return 1.0
+
+    # ── [v5.2] Fibonacci Staking ──────────────────────────────────────────────
+    def get_fibonacci_multiplier(self, consecutive_wins: int, consecutive_losses: int) -> float:
+        """
+        Fibonacci progression on wins: 1.0 → 1.5 → 2.0 → 2.5 (cap at 3x).
+        Hard reset on any loss back to 1.0 base.
+        """
+        if consecutive_losses > 0:
+            return 1.0  # Hard reset after any loss
+        fib_scale = [1.0, 1.5, 2.0, 2.5, 3.0]
+        idx = min(consecutive_wins, len(fib_scale) - 1)
+        return fib_scale[idx]
+
     def calculate_kelly_size(self, win_prob: float, payout_multiplier: float, current_bankroll: float) -> float:
         """Fraction of bankroll to bet based on Kelly Criterion."""
         b = payout_multiplier - 1

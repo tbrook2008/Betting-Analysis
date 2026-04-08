@@ -78,7 +78,6 @@ def generate_hits_signals(
     # ── 5. Opposing pitcher K% (inverse signal — high K% → fewer hits) ──────
     if opp_pitcher_id:
         p_stats = mlb.get_season_pitching_stats(opp_pitcher_id)
-        # statsapi returns strikeoutsPer9Inn; compute rough K%
         so = float(p_stats.get("strikeOuts", 0) or 0)
         bf = float(p_stats.get("battersFaced", 1) or 1)
         opp_k_pct = (so / bf * 100) if bf > 0 else 0
@@ -89,6 +88,28 @@ def generate_hits_signals(
         sc = mlb.get_statcast_pitcher_stats(opp_pitcher_name)
         if sc.get("k_pct"):
             signals["opp_pitcher_k_pct"] = sc["k_pct"]
+
+    # ── 6. [v5.2] Weather signals ─────────────────────────────────────────────
+    try:
+        from data.weather_client import get_weather_signals
+        wx = get_weather_signals(venue)
+        if wx.get("wind_out_boost"):
+            signals["wind_out_boost"] = wx["wind_out_boost"]
+        if wx.get("wind_in_penalty"):
+            signals["wind_in_penalty"] = -wx["wind_in_penalty"]  # inverted; penalty
+        if wx.get("temp_boost"):
+            signals["temp_boost"] = wx["temp_boost"]
+    except Exception as exc:
+        log.debug(f"Weather signals skipped: {exc}")
+
+    # ── 7. [v5.2] Lineup / batting-order signals ──────────────────────────────
+    try:
+        import datetime
+        from data.lineup_client import get_lineup_signal
+        lineup_sigs = get_lineup_signal(player_name, datetime.date.today())
+        signals.update(lineup_sigs)
+    except Exception as exc:
+        log.debug(f"Lineup signals skipped: {exc}")
 
     log.debug(f"Hits signals for {player_name}: {signals}")
     return signals
