@@ -38,11 +38,27 @@ class BankrollManager:
         return current_bankroll * final_fraction
 
     def get_recommended_entry_size(self, entry: Dict[str, Any], current_bankroll: float) -> float:
+        """
+        v5.1: Entry-type-aware Kelly sizing.
+        Flex-6 gets up to 20% of bankroll (proven biggest profit driver).
+        Power-2/3 are hard-capped at 5% (historically unprofitable).
+        """
+        entry_type = entry.get('entry_type', '')
         win_prob = entry.get('win_probability', 0)
         payout = entry.get('payout_multiplier', 0)
         
+        # ── [v5.1 Fix 2] Type-aware Kelly cap ────────────────────────────────
+        if entry_type in ('flex_6', 'flex_5'):
+            type_cap = 0.20  # Up to 20% of bankroll — this is our money-maker
+        elif entry_type in ('flex_3', 'flex_4'):
+            type_cap = 0.12
+        else:
+            type_cap = 0.05  # Hard cap for all Power entries (historically losers)
+        
         kelly_size = self.calculate_kelly_size(win_prob, payout, current_bankroll)
-        recommended_size = max(round(kelly_size), 3.0) # PrizePicks Minimum is $3
+        # Blend Kelly with type cap: take the lesser of the two
+        capped_size = min(kelly_size, current_bankroll * type_cap)
+        recommended_size = max(round(capped_size), 3.0)  # PrizePicks Minimum is $3
         
         return float(recommended_size)
 

@@ -58,6 +58,14 @@ class EntryOptimizer:
                 if len(teams_in_combo) < 2 and len(teams_in_combo) > 0:
                     continue
                 
+                # ── [v5.1 Fix 3] Quality Gate for 6-leg entries ────────────────
+                # Require at least 5 of 6 legs to be ≥85% confidence.
+                # This prevents weak-leg breakdowns (e.g., Apr 6 Yordan Alvarez Runs).
+                if size == 6:
+                    high_conf_count = sum(1 for p in combo_list if getattr(p, 'confidence', 0) >= 85)
+                    if high_conf_count < 5:
+                        continue
+                
                 # Check negative correlation warnings before calc
                 if self.comb_analyzer.has_strong_negative_correlation(combo_list):
                     continue
@@ -77,6 +85,12 @@ class EntryOptimizer:
                 if has_hr:
                     is_power_ev_positive = False  # Never allow Power plays for HR entries
                 
+                # ── [v5.1 Fix 1] Force Flex for all 5-6 leg entries ───────────
+                # Data shows Flex-6 accounts for 95% of all profits.
+                # Power plays for large entries are statistically unprofitable.
+                if size >= 5:
+                    is_power_ev_positive = False
+
                 # We only keep positive EV
                 if is_power_ev_positive or is_flex_ev_positive:
                     best_mode = 'power'
@@ -112,37 +126,57 @@ class EntryOptimizer:
         return sorted(entries_list, key=lambda x: x['ev'], reverse=True)
 
     def optimize_portfolio(self, entries_list: List[Dict[str, Any]], bankroll: float, risk_tolerance: str = 'conservative') -> List[Dict[str, Any]]:
-        """Select a diverse set of entries minimizing overlap."""
+        """
+        Select a diverse set of entries.
+        v5.1: Flex-6 entries get absolute priority. Smaller Power entries are
+        only added if budget remains AND they use non-overlapping picks.
+        """
         risk_params = {
-            'conservative': {'max_per_entry': 0.05, 'max_daily_risk': 0.20, 'prefer_flex': True},
-            'moderate': {'max_per_entry': 0.10, 'max_daily_risk': 0.35, 'prefer_flex': False},
-            'aggressive': {'max_per_entry': 0.15, 'max_daily_risk': 0.50, 'prefer_flex': False}
+            'conservative': {'max_per_entry': 0.15, 'max_daily_risk': 0.20, 'prefer_flex': True},
+            'moderate':      {'max_per_entry': 0.15, 'max_daily_risk': 0.35, 'prefer_flex': True},
+            'aggressive':    {'max_per_entry': 0.20, 'max_daily_risk': 0.50, 'prefer_flex': False}
         }
         
         params = risk_params.get(risk_tolerance, risk_params['conservative'])
-        max_entry_size = bankroll * params['max_per_entry']
         daily_budget = bankroll * params['max_daily_risk']
         
+        # ── [v5.1 Fix 1] Separate Flex-6 from all other entries ───────────────
+        flex6_entries = [e for e in entries_list if e['entry_type'] == 'flex_6']
+        flex5_entries = [e for e in entries_list if e['entry_type'] == 'flex_5']
+        other_entries = [e for e in entries_list if e['entry_type'] not in ('flex_6', 'flex_5')]
+
+        # ── [v5.1 Fix 2] Conditional Kelly sizing per entry type ──────────────
+        # Flex-6 gets the biggest slice since it drives 95% of profits.
+        type_budget_caps = {
+            'flex_6': min(bankroll * 0.20, daily_budget * 0.70),  # Up to 70% of daily budget
+            'flex_5': min(bankroll * 0.15, daily_budget * 0.50),
+            'other':  min(bankroll * 0.05, daily_budget * 0.15),  # Hard cap: 5% of bankroll
+        }
+
         selected_entries = []
-        used_player_props = set()
+        used_player_props: set = set()
         budget_remaining = daily_budget
-        
-        # Sort by best EV first
-        for entry in self.rank_entries(entries_list, 'ev'):
-            # Preference filter
-            if params['prefer_flex'] and entry['recommended_type'] == 'power':
-                # Skip or penalize power plays if strictly conservative
-                pass 
-                
-            # Overlap check
-            pick_signatures = {f"{getattr(p, 'player_name', '')}_{getattr(p, 'prop_type', '')}" for p in entry['picks']}
-            if not any(sig in used_player_props for sig in pick_signatures):
-                if budget_remaining >= max_entry_size:
-                    # Assign size temporarily, Kelly will override this later
-                    entry['entry_amount'] = max_entry_size 
-                    selected_entries.append(entry)
-                    used_player_props.update(pick_signatures)
-                    budget_remaining -= max_entry_size
+
+        def _try_add(entry_pool, cap_key):
+            nonlocal budget_remaining
+            for entry in self.rank_entries(entry_pool, 'ev'):
+                pick_sigs = {f"{getattr(p, 'player_name', '')}_{getattr(p, 'prop_type', '')}" for p in entry['picks']}
+                if not any(sig in used_player_props for sig in pick_sigs):
+                    alloc = type_budget_caps[cap_key]
+                    if budget_remaining >= alloc and alloc >= 3.0:
+                        entry['entry_amount'] = alloc
+                        selected_entries.append(entry)
+                        used_player_props.update(pick_sigs)
+                        budget_remaining -= alloc
+                        return  # Only one primary entry per type
+
+        # Priority 1: Best Flex-6
+        _try_add(flex6_entries, 'flex_6')
+        # Priority 2: Best Flex-5 (non-overlapping)
+        _try_add(flex5_entries, 'flex_5')
+        # Priority 3: Best remaining (Power-2/3 only if budget left)
+        if not params['prefer_flex']:
+            _try_add(other_entries, 'other')
                     
         return selected_entries
 
