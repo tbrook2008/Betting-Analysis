@@ -25,7 +25,8 @@ def cli():
 @click.option('--bankroll', default=150.0, help='Current bankroll')
 @click.option('--risk', default='conservative', help='Risk tolerance')
 @click.option('--source', default=None, help='prizepicks | draftkings | all')
-def run(date, min_confidence, bankroll, risk, source):
+@click.option('--sport', default='mlb', help='mlb | nba')
+def run(date, min_confidence, bankroll, risk, source, sport):
     """Generate optimized PrizePicks entries"""
     from picks.pick_generator import generate_daily_picks
     from analysis.correlation_engine import CorrelationEngine
@@ -47,13 +48,14 @@ def run(date, min_confidence, bankroll, risk, source):
     else:
         actual_date = datetime.date.today()
 
-    console.print(f"\n[bold cyan]🎯 PrizePicks EV Optimization[/] — {actual_date}\n")
+    console.print(f"\n[bold cyan]🎯 PrizePicks EV Optimization[/] — {actual_date} ({sport.upper()})\n")
 
     with console.status("Fetching lines and running base models…"):
         picks = generate_daily_picks(
             date=actual_date,
             min_confidence=min_confidence,
             sources=__parse_sources(source),
+            sport=sport,
         )
 
     if not picks:

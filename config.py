@@ -24,7 +24,9 @@ CACHE_DIR.mkdir(exist_ok=True)
 ODDS_API_KEY: str = os.getenv("ODDS_API_KEY", "")
 ODDS_API_BASE = "https://api.the-odds-api.com/v4"
 PRIZEPICKS_API_BASE = "https://partner-api.prizepicks.com"
+# PrizePicks IDs
 PRIZEPICKS_MLB_LEAGUE_ID = "2"  # MLB league id on PrizePicks
+PRIZEPICKS_NBA_LEAGUE_ID = "7"  # NBA league id on PrizePicks
 
 OWM_API_KEY: str = os.getenv("OWM_API_KEY", "")
 OWM_API_BASE = "https://api.openweathermap.org/data/2.5"
@@ -116,6 +118,15 @@ TOTALS_WEIGHTS = {
     "park_run_factor":      0.10,
     "wind_factor":          0.10,
     "bullpen_fatigue":      0.10,
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Signal Weights — NBA Base Model (Points, Rebounds, Assists, PRA)
+# ─────────────────────────────────────────────────────────────────────────────
+NBA_WEIGHTS = {
+    "l5_hit_rate":    0.40,
+    "l15_hit_rate":   0.35,
+    "is_over_value":  0.25,
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -219,8 +230,8 @@ PRIZEPICKS_CONFIG = {
 BANKROLL_CONFIG = {
     'default_starting_bankroll': 150,
     'risk_tolerance': 'conservative',  # 'conservative', 'moderate', 'aggressive'
-    'kelly_fraction': 0.25,
-    'max_daily_risk_pct': 20,
+    'kelly_fraction': 0.20,             # Reduced from 0.25 for real-money buffer
+    'max_daily_risk_pct': 15,          # Reduced from 20%
     'max_single_entry_pct': 5,
     'stop_loss_pct': 33,
     'min_entry_size': 3,

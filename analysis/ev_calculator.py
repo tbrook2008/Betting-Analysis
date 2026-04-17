@@ -12,8 +12,8 @@ class EVCalculator:
         'power_2': 3.0,
         'power_3': 5.0,
         'power_4': 10.0,
-        'power_5': 20.0,
-        'power_6': 25.0,
+        'power_5': 5.5,  # Arena Floor
+        'power_6': 40.0, # Arena Floor
         'flex_3': 2.25,
         'flex_4': 5.0,   
         'flex_5': 10.0,  
@@ -50,13 +50,13 @@ class EVCalculator:
             'correlation_score': correlation
         }
 
-    # Real PrizePicks Flex partial payout structure.
+    # Real PrizePicks Arena Minimum Guarantee partial payout structure.
     # Keys = number of legs. Values = dict of {num_hits: payout_multiplier}
     FLEX_PARTIAL_PAYOUTS: dict = {
-        3: {3: 2.25, 2: 1.25, 1: 0.0, 0: 0.0},
+        3: {3: 2.25, 2: 1.25, 1: 0.0, 0: 0.0}, # Arena usually matches standard here
         4: {4: 5.0,  3: 1.5,  2: 0.4, 1: 0.0, 0: 0.0},
-        5: {5: 10.0, 4: 2.0,  3: 0.4, 2: 0.0, 1: 0.0, 0: 0.0},
-        6: {6: 25.0, 5: 2.0,  4: 0.4, 3: 0.0, 2: 0.0, 1: 0.0, 0: 0.0},
+        5: {5: 4.0,  4: 0.5,  3: 0.25, 2: 0.0, 1: 0.0, 0: 0.0}, # Arena Floor
+        6: {6: 27.0, 5: 2.0,  4: 0.4, 3: 0.0, 2: 0.0, 1: 0.0, 0: 0.0}, # Arena Floor
     }
 
     def calculate_flex_play_ev(self, picks: List[Any], entry_amount: float = 10.0) -> Dict[str, Any]:

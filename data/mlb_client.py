@@ -41,13 +41,23 @@ def _get_league_exit_velo(year: int, pos: str = "batter") -> pd.DataFrame:
 
 @lru_cache(maxsize=1)
 def _get_league_batting_stats(year: int) -> pd.DataFrame:
+    """Fetch league-wide batting stats. Falls back to empty DF if FanGraphs (403) blocks."""
     log.debug(f"Fetching league-wide batting stats for {year}")
-    return pb.batting_stats(year, year, qual=1)
+    try:
+        return pb.batting_stats(year, year, qual=1)
+    except Exception as e:
+        log.error(f"FanGraphs batting_stats fetch failed (likely 403): {e}")
+        return pd.DataFrame()
 
 @lru_cache(maxsize=1)
 def _get_league_pitching_stats(year: int) -> pd.DataFrame:
+    """Fetch league-wide pitching stats. Falls back to empty DF if FanGraphs (403) blocks."""
     log.debug(f"Fetching league-wide pitching stats for {year}")
-    return pb.pitching_stats(year, year, qual=1)
+    try:
+        return pb.pitching_stats(year, year, qual=1)
+    except Exception as e:
+        log.error(f"FanGraphs pitching_stats fetch failed (likely 403): {e}")
+        return pd.DataFrame()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

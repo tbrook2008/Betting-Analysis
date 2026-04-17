@@ -1,19 +1,15 @@
-# MLB Betting Analysis | Project Status — April 13, 2026 (v5.2 Stable)
+# AI Betting Analysis | Project Status — April 17, 2026 (v6.0 Arena/NBA Engine)
 
-## 🎯 Current Strategy: The ROI-Hardened Engine
-The system has officially exited its "Experimental" phase and entered **"v5.2 Stable"** after a historically strong 3-day winning streak (April 10-12). The engine now prioritizes mathematical safety and high-liquidity props (Hits) over high-variance longshots.
-
-### Recent Performance (The April Heater):
-- **April 10**: 5/6 Flex-6 Payout ✅
-- **April 11**: 5/6 Flex-6 Payout ✅
-- **April 12**: 5/6 Flex-6 Payout ✅
-- **Current Bankroll**: $186.97 (Up 24.6% from base)
+## 🎯 Current Strategy: Multi-Sport Arena Floor Engine
+The system has been upgraded to **"v6.0"** to address the realities of tournament-style DFS platforms (PrizePicks Pick 'Em Arena). The engine now uses exclusively **"Arena Minimum Guarantee"** payouts for EV calculations, completely ignoring the variance of "1st Place" payouts. Furthermore, the engine has been horizontally expanded to support NBA markets via the `nba_api`.
 
 ### Core Architecture Pillars:
-1. **Correlation Mathematics (`analysis/correlation_engine.py`)**: Mathematically scales independent probabilities. Now includes a **Game Script Stack Bonus (+0.50)** for 3+ same-team hitters.
-2. **Binomial Distributions (`analysis/ev_calculator.py`)**: Utilizes statistical combinatorics to determine exact EV and ROIs for all PrizePicks entry types.
-3. **Kelly Criterion + Streak Staking (`tracking/bankroll_manager.py`)**: **v5.2** adds **Win-Streak Progressive Staking** and **Fibonacci Staking** to exploit hot model runs while resetting after losses.
-4. **Market Edge Signal (`analysis/confidence_scorer.py`)**: **v5.2** Multi-book consensus (DraftKings + FanDuel + Underdog) provides a 3-way validation signal for every line.
+1. **Multi-Sport Routing (`picks/pick_generator.py`)**: Supports `--sport mlb` and `--sport nba` dynamically.
+2. **Arena Floor Math (`analysis/ev_calculator.py`)**: Calculates exact binomial EV relying *only* on the Minimum Guarantees (e.g., 4X for 5-Flex, 27X for 6-Flex).
+3. **NBA Predictive Models (`analysis/nba_models.py`)**: Trailing momentum and season baseline models for Points, Rebounds, Assists, and PRA.
+4. **Correlation Mathematics (`analysis/correlation_engine.py`)**: Mathematically scales independent probabilities with Game Script Stack bonuses.
+5. **Kelly Criterion + Streak Staking (`tracking/bankroll_manager.py`)**: Win-Streak Progressive Staking and Fibonacci Strategy.
+6. **Market Edge Signal (`analysis/confidence_scorer.py`)**: Multi-book consensus validation signal for every line.
 5. **Weather Intelligence (`data/weather_client.py`)**: Injects wind speed/direction and temperature signals into the Hits model.
 6. **Lineup Intelligence (`data/lineup_client.py`)**: Blocks entries for players not in the starting lineup or those at the bottom (7-9) of the batting order.
 7. **The Teacher (`analysis/teacher.py`)**: Autonomous accuracy feedback loop tuning `dynamic_weights.json` daily.

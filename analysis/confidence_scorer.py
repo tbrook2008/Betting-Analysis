@@ -21,7 +21,7 @@ log = get_logger(__name__)
 # Load learned multipliers (Auto-tuned by Teacher)
 DYNAMIC_MULTIPLIERS = get_multipliers()
 
-PropType = Literal["hits", "total_bases", "home_runs", "pitcher_ks", "game_total"]
+PropType = str # Allow broader strings since we build dynamically for NBA
 Recommendation = Literal["OVER", "UNDER", "NO PLAY"]
 
 
@@ -80,6 +80,11 @@ _SIGNAL_RANGES: dict[str, tuple[float, float, bool]] = {
     "wind_factor":         (-0.5,  0.5,   False),
     "bullpen_fatigue":     (0.0,   15.0,  False),     # more fatigue = more O runs
     "hr_per_9":            (0.5,   2.0,   True),      # for pitcher props
+    
+    # NBA Ranges
+    "l5_hit_rate":         (0.0,   1.0,   False),
+    "l15_hit_rate":        (0.0,   1.0,   False),
+    "is_over_value":       (0.0,   1.0,   False),
 }
 
 _PROP_WEIGHTS: dict[str, dict[str, float]] = {
@@ -88,6 +93,14 @@ _PROP_WEIGHTS: dict[str, dict[str, float]] = {
     "home_runs":   config.HR_WEIGHTS,
     "pitcher_ks":  config.PITCHER_K_WEIGHTS,
     "game_total":  config.TOTALS_WEIGHTS,
+    # NBA Props
+    "nba_points":  config.NBA_WEIGHTS,
+    "nba_rebounds": config.NBA_WEIGHTS,
+    "nba_assists": config.NBA_WEIGHTS,
+    "nba_pts+rebs+asts": config.NBA_WEIGHTS,
+    "nba_pts+rebs": config.NBA_WEIGHTS,
+    "nba_pts+asts": config.NBA_WEIGHTS,
+    "nba_rebs+asts": config.NBA_WEIGHTS,
 }
 
 

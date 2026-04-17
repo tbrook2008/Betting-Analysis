@@ -1,6 +1,6 @@
-# MLB Betting Analysis 🏙️
+# AI Betting Analysis 🏀 ⚾
 
-A **v4.0** production-grade autonomous quantitative platform for MLB prop betting. Ingests real game data, scores every PrizePicks/DraftKings line with a weighted multi-signal confidence model, generates positive-EV combinatoric entries, auto-reads your live bankroll, and self-corrects via a daily AI retrospective loop.
+A **v6.0** production-grade autonomous quantitative platform for MLB and NBA prop betting. Ingests real game data, scores every PrizePicks line with a weighted multi-signal confidence model, generates EV mathematically hardened for **Arena Minimum Guarantees**, and strictly monitors Bankroll via Kelly Criterion.
 
 ---
 

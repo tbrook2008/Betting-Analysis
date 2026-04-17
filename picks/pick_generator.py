@@ -26,6 +26,7 @@ from analysis.hits_model import generate_hits_signals, generate_total_bases_sign
 from analysis.hr_model import generate_hr_signals
 from analysis.pitcher_model import generate_pitcher_k_signals
 from analysis.totals_model import generate_totals_signals, project_total_runs
+from analysis.nba_models import generate_nba_signals
 from utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -60,7 +61,7 @@ _PROP_TYPE_MAP: dict[str, str] = {
     # PrizePicks label → internal key
     "hits": "hits",
     "total bases": "total_bases",
-    "hits+runs+rbis": "hits",      # Combined hitter stats use hits model
+    "hits+runs+rbis": "hits",      
     "home runs": "home_runs",
     "pitcher strikeouts": "pitcher_ks",
     "strikeouts": "pitcher_ks",
@@ -86,6 +87,7 @@ def generate_daily_picks(
     date: datetime.date | None = None,
     min_confidence: int = config.MIN_CONFIDENCE,
     sources: list[str] | None = None,
+    sport: str = "mlb",
 ) -> list[PickResult]:
     """
     Generate today's best picks across all player prop types.
@@ -94,23 +96,27 @@ def generate_daily_picks(
         date:            Date to run (default: today)
         min_confidence:  Minimum confidence score to include (default from config)
         sources:         ["PrizePicks", "DraftKings"] or a subset
+        sport:           "mlb" or "nba"
 
     Returns:
         List of PickResult objects sorted by confidence descending.
     """
     date = date or datetime.date.today()
     sources = sources or ["PrizePicks", "DraftKings"]
-    log.info(f"Generating picks for {date} from {sources}")
+    log.info(f"Generating picks for {date} from {sources} ({sport.upper()})")
 
     # ── 1. Fetch schedule to build game context ──────────────────────────────
-    schedule = mlb.get_schedule(date)
-    game_ctx = _build_game_context(schedule)
+    game_ctx = {}
+    if sport == "mlb":
+        schedule = mlb.get_schedule(date)
+        game_ctx = _build_game_context(schedule)
 
     # ── 2. Collect lines from all sources ────────────────────────────────────
     all_lines: list[dict] = []
 
     if "PrizePicks" in sources:
-        pp_df = get_prizepicks_lines()
+        league_id = config.PRIZEPICKS_NBA_LEAGUE_ID if sport == "nba" else config.PRIZEPICKS_MLB_LEAGUE_ID
+        pp_df = get_prizepicks_lines(league_id=league_id)
         if not pp_df.empty:
             pp_df["source"] = "PrizePicks"
             all_lines.extend(pp_df.to_dict("records"))
@@ -151,18 +157,28 @@ def generate_daily_picks(
 
     def _safe_score(line_row: dict) -> PickResult | None:
         try:
+            # Drop empty players
+            if not line_row.get("player_name"):
+                return None
+            
+            prop_label = str(line_row.get("prop_type", "")).strip().lower()
+            prop_key = _PROP_TYPE_MAP.get(prop_label)
+            if sport == 'nba':
+                prop_key = prop_label # For NBA, just pass through the label as the key
+
+            if not prop_key:
+                return None
+                
             # Inject DraftKings odds into the row if this is a PrizePicks line
             if line_row.get("source") == "PrizePicks":
-                key = (line_row["player_name"].lower(), line_row["prop_type"].lower())
+                key = (line_row["player_name"].lower(), prop_label)
                 dk_data = odds_lookup.get(key)
                 if dk_data:
                     line_row["over_odds"] = dk_data["over_odds"]
                     line_row["under_odds"] = dk_data["under_odds"]
             
-            return _score_line(line_row, game_ctx)
+            return _evaluate_row(line_row, prop_key, game_ctx, odds_lookup, sport)
         except Exception as exc:
-            log.debug(f"Skipped line for {line_row.get('player_name', '?')}: {exc}")
-            return None
             log.debug(f"Skipped line for {line_row.get('player_name', '?')}: {exc}")
             return None
 
@@ -225,30 +241,41 @@ def _build_game_context(schedule: list[dict]) -> dict[str, dict]:
 # Per-Line Scoring
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _score_line(row: dict, game_ctx: dict[str, dict]) -> PickResult | None:
-    """Score a single prop line row and return a PickResult."""
-    player_name = str(row.get("player_name", "")).strip()
-    prop_label = str(row.get("prop_type", "")).strip()
-    line = float(row.get("line_score", 0) or 0)
+def _evaluate_row(row: dict, prop_key: str, game_ctx: dict, odds_lookup: dict, sport: str) -> PickResult | None:
+    player_name = str(row.get("player_name", ""))
+    team = str(row.get("team", ""))
+    opponent = str(row.get("opponent", ""))
+    line = float(row.get("line_score", 0.0))
+    prop_label = str(row.get("prop_type", "Unknown"))
     source = str(row.get("source", "PrizePicks"))
-    team = str(row.get("team", "")).strip()
-    opponent = str(row.get("opponent", "")).strip()
     game_time = str(row.get("game_time", ""))
 
-    if not player_name or line == 0:
-        return None
+    # ── [ROUTE] NBA Path
+    if sport == "nba":
+        signals = generate_nba_signals(player_name, prop_label, line)
+        if not signals or sum(signals.values()) == 0:
+            return None
+            
+        result = scorer.score(
+            signals=signals,
+            prop_type="nba_" + prop_label.lower().replace(" ", "_"),
+            line=line,
+            projected_value=signals.get("projected_value", 0),
+        )
 
-    # Map prop label → internal key
-    prop_key = _PROP_TYPE_MAP.get(prop_label.lower())
-    if prop_key is None:
-        return None  # Unknown/unsupported prop type
+        return PickResult(
+            player_name=player_name, team=team, opponent=opponent, prop_type=prop_label,
+            line=line, recommendation=result.recommendation, confidence=result.confidence,
+            reasoning=result.reasoning, source=source, game_time=game_time,
+            prop_type_key="nba_" + prop_label.lower().replace(" ", "_"),
+            signal_contributions=result.signal_contributions,
+        )
 
-    # Look up game context
+    # ── [ROUTE] MLB Path
     gctx = game_ctx.get(team.lower(), {})
     venue = gctx.get("venue", "")
     is_home = gctx.get("is_home", True)
 
-    # Determine opposing pitcher info
     if is_home:
         opp_pitcher_name = gctx.get("away_pitcher_name", "TBD")
         opp_pitcher_id = gctx.get("away_pitcher_id")
