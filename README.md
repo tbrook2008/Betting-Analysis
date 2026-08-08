@@ -1,6 +1,6 @@
 # AI Betting Analysis 🏀 ⚾
 
-A **v6.1** production-grade autonomous quantitative platform for MLB and NBA prop betting. Ingests real game data, scores every PrizePicks line with a weighted multi-signal confidence model, evaluates player props with **Monte Carlo Game-Script Simulation**, generates EV mathematically hardened for **Arena Minimum Guarantees**, and strictly monitors Bankroll via a **Monte Carlo Kelly Bankroll Simulator**.
+A **v6.2** production-grade autonomous quantitative platform for MLB and NBA prop betting. Ingests real game data, scores every PrizePicks line with a weighted multi-signal confidence model, evaluates player props with **Monte Carlo Game-Script Simulation**, generates EV mathematically hardened for **Arena Minimum Guarantees**, strictly monitors Bankroll via a **Monte Carlo Kelly Bankroll Simulator**, and continuously auto-tunes itself using a **Bayesian Hyperparameter Optimizer**.
 
 ---
 
@@ -47,7 +47,10 @@ python main.py stats
 # 5. Run a standalone Bankroll Monte Carlo Simulation to find Optimal Kelly Fractions
 python scripts/simulate_bankroll.py
 
-# 6. Start API Server or reset AI weights
+# 6. Run Bayesian Hyperparameter Optimization across historical dates
+python scripts/optimize_hyperparameters.py --trials 50 --start-date 2026-07-20 --end-date 2026-08-07
+
+# 7. Start API Server or reset AI weights
 python main.py serve --port 8080
 python main.py reset-learning
 ```
@@ -140,10 +143,11 @@ Each prop runs through a **signal → normalize → weight → score → audit**
 8. **Fractional Kelly Criterion Bankroll** *(v4.0 auto-read)*: System reads the actual live P&L balance from `performance.db`. Kelly sizes scale automatically against the real current balance.
 9. **Monte Carlo Bankroll Simulation** *(v6.1)*: `BankrollManager` uses simulated exact risk of ruin to dictate how heavily to cap Flex 6 sizing, overriding strict fractional logic if minimum bets require it.
 10. **Monte Carlo Game-Script Simulation** *(v6.1)*: 9-inning game flows are simulated 1,000 times to calculate exact Plate Appearance (PA) multipliers for batters, drastically improving hits model accuracy in high-scoring environments.
-11. **Autonomous Teacher** *(v4.0 proportional nudge)*: After grading, the Teacher adjusts model weights using `nudge = (accuracy - 0.55) × 0.10` — a 6% hit-rate now triggers a ~5% penalty (was 2% before).
-12. **DB-Backed Learning** *(v4.0)*: Graded actual values are persisted to `entry_picks` table so the Teacher reads verified outcomes instead of re-fetching the API.
-13. **PrizePicks Compliance**: Home Runs banned, no duplicate players, 2+ team requirement enforced.
-14. **Market Edge Filter** *(v4.0)*: Picks are discarded if model confidence doesn’t beat the market-implied probability by at least 5%.
+11. **Bayesian Hyperparameter Optimizer** *(v6.2)*: `optuna` engine sweeps across configuration parameters (confidence minimums, weights, stack correlations) inside an in-memory SQLite database across historical dates to mathematically prove the optimal ROI configuration.
+12. **Autonomous Teacher** *(v4.0 proportional nudge)*: After grading, the Teacher adjusts model weights using `nudge = (accuracy - 0.55) × 0.10` — a 6% hit-rate now triggers a ~5% penalty (was 2% before).
+13. **DB-Backed Learning** *(v4.0)*: Graded actual values are persisted to `entry_picks` table so the Teacher reads verified outcomes instead of re-fetching the API.
+14. **PrizePicks Compliance**: Home Runs banned, no duplicate players, 2+ team requirement enforced.
+15. **Market Edge Filter** *(v4.0)*: Picks are discarded if model confidence doesn’t beat the market-implied probability by at least 5%.
 
 View the AI's current memory and multipliers in `data/dynamic_weights.json`.
 

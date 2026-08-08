@@ -8,13 +8,22 @@ from datetime import datetime
 from typing import Dict, Any, List
 
 class PerformanceTracker:
-    def __init__(self, db_path='tracking/performance.db'):
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        self.db_path = db_path
+    def __init__(self, db_path='tracking/performance.db', in_memory=False):
+        self.in_memory = in_memory
+        self._persistent_conn = None
+        if in_memory:
+            self.db_path = 'file::memory:?cache=shared'
+            self._persistent_conn = self._get_connection()
+        else:
+            os.makedirs(os.path.dirname(db_path), exist_ok=True)
+            self.db_path = db_path
         self._init_database()
+
+    def _get_connection(self):
+        return sqlite3.connect(self.db_path, uri=self.db_path.startswith('file:'))
         
     def _init_database(self):
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         c = conn.cursor()
         c.execute('''
             CREATE TABLE IF NOT EXISTS entries (
@@ -64,7 +73,7 @@ class PerformanceTracker:
         entry_id = str(uuid.uuid4())
         date_str = date_override if date_override else datetime.now().isoformat()
         
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         c = conn.cursor()
         
         c.execute('''
@@ -93,7 +102,7 @@ class PerformanceTracker:
         return entry_id
 
     def grade_entry(self, entry_id: str, results: List[str], payout_multiplier: float) -> str:
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         c = conn.cursor()
         
         c.execute('SELECT entry_type, num_picks, entry_size FROM entries WHERE entry_id = ?', (entry_id,))
@@ -126,7 +135,7 @@ class PerformanceTracker:
         return status
 
     def get_entries(self, date: str = None, is_demo: bool = False, graded: bool = False) -> List[Dict[str, Any]]:
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         
@@ -167,7 +176,7 @@ class PerformanceTracker:
         
     def calculate_statistics(self, date_range=None) -> Dict[str, Any]:
         """Calculates global metrics for dashboard."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         c = conn.cursor()
         c.execute("SELECT COUNT(*), SUM(CASE WHEN result='win' THEN 1 ELSE 0 END), SUM(entry_size), SUM(profit_loss) FROM entries WHERE result != 'pending'")
         row = c.fetchone()
@@ -184,7 +193,7 @@ class PerformanceTracker:
         }
     def get_current_bankroll(self, starting_bankroll: float) -> float:
         """Calculates the real live bankroll from the sum of all P&L in the DB."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         c = conn.cursor()
         c.execute("SELECT SUM(profit_loss) FROM entries WHERE result != 'pending' AND is_demo = 0")
         row = c.fetchone()
@@ -194,7 +203,7 @@ class PerformanceTracker:
 
     def record_pick_result(self, entry_id: str, player_name: str, actual_value: float, was_correct: bool):
         """Fix 7: Persist actual graded values to entry_picks for Teacher to consume."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         c = conn.cursor()
         c.execute('''
             UPDATE entry_picks
@@ -206,7 +215,7 @@ class PerformanceTracker:
 
     def get_graded_picks_for_learning(self, date_str: str = None) -> list:
         """Returns all graded entry_picks with actual_value for Teacher consumption."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_connection()
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         query = '''

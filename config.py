@@ -233,7 +233,7 @@ PRIZEPICKS_CONFIG = {
 
 BANKROLL_CONFIG = {
     'default_starting_bankroll': 50,
-    'risk_tolerance': 'conservative',  # 'conservative', 'moderate', 'aggressive'
+    'risk_tolerance': 'moderate',  # 'conservative', 'moderate', 'aggressive'
     'kelly_fraction': 0.20,             # Reduced from 0.25 for real-money buffer
     'max_daily_risk_pct': 15,          # Reduced from 20%
     'max_single_entry_pct': 5,
@@ -254,3 +254,19 @@ TRACKING_CONFIG = {
     'report_formats': ['text', 'json'],
     'auto_grade_after_hours': 6,
 }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Hyperparameter Overrides (For Optimization)
+# ─────────────────────────────────────────────────────────────────────────────
+def apply_overrides(overrides: dict):
+    """
+    Dynamically overwrites global variables in this config module.
+    Used exclusively by the Hyperparameter Optimizer.
+    """
+    for key, value in overrides.items():
+        if key in globals():
+            # For nested dictionaries like PRIZEPICKS_CONFIG or HITS_WEIGHTS
+            if isinstance(globals()[key], dict) and isinstance(value, dict):
+                globals()[key].update(value)
+            else:
+                globals()[key] = value
