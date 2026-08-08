@@ -59,9 +59,10 @@ class PerformanceTracker:
         conn.commit()
         conn.close()
 
-    def log_entry(self, entry_data: Dict[str, Any], is_demo: bool = False) -> str:
+    def log_entry(self, entry_data: Dict[str, Any], is_demo: bool = False, date_override: str = None) -> str:
+        """Log a new bet entry to the database."""
         entry_id = str(uuid.uuid4())
-        date_str = datetime.now().isoformat()
+        date_str = date_override if date_override else datetime.now().isoformat()
         
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()

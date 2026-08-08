@@ -1,6 +1,6 @@
 # AI Betting Analysis 🏀 ⚾
 
-A **v6.0** production-grade autonomous quantitative platform for MLB and NBA prop betting. Ingests real game data, scores every PrizePicks line with a weighted multi-signal confidence model, generates EV mathematically hardened for **Arena Minimum Guarantees**, and strictly monitors Bankroll via Kelly Criterion.
+A **v6.1** production-grade autonomous quantitative platform for MLB and NBA prop betting. Ingests real game data, scores every PrizePicks line with a weighted multi-signal confidence model, evaluates player props with **Monte Carlo Game-Script Simulation**, generates EV mathematically hardened for **Arena Minimum Guarantees**, and strictly monitors Bankroll via a **Monte Carlo Kelly Bankroll Simulator**.
 
 ---
 
@@ -44,7 +44,10 @@ python main.py backtest --start-date 2026-03-01 --end-date 2026-03-30 --bankroll
 # 4. Read lifetime algorithm profitability
 python main.py stats
 
-# 5. Start API Server or reset AI weights
+# 5. Run a standalone Bankroll Monte Carlo Simulation to find Optimal Kelly Fractions
+python scripts/simulate_bankroll.py
+
+# 6. Start API Server or reset AI weights
 python main.py serve --port 8080
 python main.py reset-learning
 ```
@@ -98,6 +101,7 @@ Betting Analysis/
 │   ├── hr_model.py        # Home Run signals
 │   ├── pitcher_model.py   # Pitcher Strikeout signals
 │   ├── totals_model.py    # Game Total signals
+│   ├── game_simulator.py  # 🎲 Monte Carlo 9-Inning Game-Script Simulation
 │   └── confidence_scorer.py  # Weighted 0–100 scoring engine
 │
 ├── picks/
@@ -134,10 +138,12 @@ Each prop runs through a **signal → normalize → weight → score → audit**
 6. **Quantitative EV Optimization**: `analysis/ev_calculator.py` uses exact binomial distributions and per-outcome PrizePicks payout tables (e.g. Flex 3: 3/3=2.25x, 2/3=1.25x) to eliminate inflated EV estimates.
 7. **Correlation Engine** *(v4.0, all 6 rules active)*: Pitcher vs opposing batters = −0.35 correlation. Same-game dual pitchers = −0.20. Same-team hitters = +0.25.
 8. **Fractional Kelly Criterion Bankroll** *(v4.0 auto-read)*: System reads the actual live P&L balance from `performance.db`. Kelly sizes scale automatically against the real current balance.
-9. **Autonomous Teacher** *(v4.0 proportional nudge)*: After grading, the Teacher adjusts model weights using `nudge = (accuracy - 0.55) × 0.10` — a 6% hit-rate now triggers a ~5% penalty (was 2% before).
-10. **DB-Backed Learning** *(v4.0)*: Graded actual values are persisted to `entry_picks` table so the Teacher reads verified outcomes instead of re-fetching the API.
-11. **PrizePicks Compliance**: Home Runs banned, no duplicate players, 2+ team requirement enforced.
-12. **Market Edge Filter** *(v4.0)*: Picks are discarded if model confidence doesn’t beat the market-implied probability by at least 5%.
+9. **Monte Carlo Bankroll Simulation** *(v6.1)*: `BankrollManager` uses simulated exact risk of ruin to dictate how heavily to cap Flex 6 sizing, overriding strict fractional logic if minimum bets require it.
+10. **Monte Carlo Game-Script Simulation** *(v6.1)*: 9-inning game flows are simulated 1,000 times to calculate exact Plate Appearance (PA) multipliers for batters, drastically improving hits model accuracy in high-scoring environments.
+11. **Autonomous Teacher** *(v4.0 proportional nudge)*: After grading, the Teacher adjusts model weights using `nudge = (accuracy - 0.55) × 0.10` — a 6% hit-rate now triggers a ~5% penalty (was 2% before).
+12. **DB-Backed Learning** *(v4.0)*: Graded actual values are persisted to `entry_picks` table so the Teacher reads verified outcomes instead of re-fetching the API.
+13. **PrizePicks Compliance**: Home Runs banned, no duplicate players, 2+ team requirement enforced.
+14. **Market Edge Filter** *(v4.0)*: Picks are discarded if model confidence doesn’t beat the market-implied probability by at least 5%.
 
 View the AI's current memory and multipliers in `data/dynamic_weights.json`.
 

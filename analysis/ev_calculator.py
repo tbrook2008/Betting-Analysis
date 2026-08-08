@@ -56,7 +56,11 @@ class EVCalculator:
         3: {3: 2.25, 2: 1.25, 1: 0.0, 0: 0.0}, # Arena usually matches standard here
         4: {4: 5.0,  3: 1.5,  2: 0.4, 1: 0.0, 0: 0.0},
         5: {5: 4.0,  4: 0.5,  3: 0.25, 2: 0.0, 1: 0.0, 0: 0.0}, # Arena Floor
-        6: {6: 27.0, 5: 2.0,  4: 0.4, 3: 0.0, 2: 0.0, 1: 0.0, 0: 0.0}, # Arena Floor
+        6: {6: 25.0, 5: 2.0,  4: 0.4, 3: 0.0, 2: 0.0, 1: 0.0, 0: 0.0}, # Standard 6-Flex
+    }
+
+    FLEX_GOBLIN_PAYOUTS: dict = {
+        6: {6: 4.0, 5: 1.25,  4: 0.4, 3: 0.0, 2: 0.0, 1: 0.0, 0: 0.0}, # Goblin 6-Flex
     }
 
     def calculate_flex_play_ev(self, picks: List[Any], entry_amount: float = 10.0) -> Dict[str, Any]:
@@ -72,7 +76,13 @@ class EVCalculator:
         # Apply correlation adjustment to the per-leg baseline
         adj_prob = float(min(0.99, max(0.01, avg_prob * (1 + correlation * 0.3))))
 
-        payout_map = self.FLEX_PARTIAL_PAYOUTS[n]
+        # Determine if this is a Goblin-discounted entry
+        is_goblin_entry = False
+        num_goblins = sum(1 for p in picks if getattr(p, 'odds_type', 'standard') == 'goblin' or (getattr(p, 'prop_type_key', '') == 'hits' and getattr(p, 'line', 1.0) <= 0.5))
+        if num_goblins >= (n / 2) and n in self.FLEX_GOBLIN_PAYOUTS:
+            is_goblin_entry = True
+
+        payout_map = self.FLEX_GOBLIN_PAYOUTS[n] if is_goblin_entry else self.FLEX_PARTIAL_PAYOUTS[n]
 
         # Calculate EV summed across ALL outcomes (exact binomial)
         ev = 0.0

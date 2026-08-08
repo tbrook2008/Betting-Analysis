@@ -71,7 +71,7 @@ def get_confirmed_lineups(date: datetime.date) -> dict[str, dict]:
     return lineups
 
 
-def is_player_starting(player_name: str, date: datetime.date) -> tuple[bool, int]:
+def is_player_starting(player_name: str, team_name: str, date: datetime.date) -> tuple[bool, int]:
     """
     Returns (is_starting, batting_order) for a player on a given date.
     is_starting=False means they are NOT in the confirmed lineup (DNP risk).
@@ -79,18 +79,30 @@ def is_player_starting(player_name: str, date: datetime.date) -> tuple[bool, int
     """
     lineups = get_confirmed_lineups(date)
     info = lineups.get(player_name.lower())
-    if info is None:
-        return True, 0  # Lineup not yet confirmed — be permissive
-    return True, info["batting_order"]
+    if info is not None:
+        return True, info["batting_order"]
+        
+    # Player not found. Is their team's lineup confirmed?
+    # If any player for this team is in the lineup dict, the lineup is out and our player is benched.
+    team_lower = team_name.lower()
+    team_lineup_posted = any(
+        team_lower in v["team"].lower() or v["team"].lower() in team_lower 
+        for v in lineups.values()
+    )
+    
+    if team_lineup_posted:
+        return False, 0  # Confirmed DNP
+        
+    return True, 0  # Lineup not yet confirmed — be permissive
 
 
-def get_lineup_signal(player_name: str, date: datetime.date) -> dict[str, float]:
+def get_lineup_signal(player_name: str, team_name: str, date: datetime.date) -> dict[str, float]:
     """
     Return lineup-based signals for injection into the confidence scorer.
       batting_order_signal: [1-3] = 0.8 (lots of PAs), [7-9] = -0.3 (fewer PAs)
       confirmed_starter: 1.0 if confirmed, 0.0 if not in lineup
     """
-    is_starting, order = is_player_starting(player_name, date)
+    is_starting, order = is_player_starting(player_name, team_name, date)
 
     if not is_starting:
         return {"confirmed_starter": 0.0, "batting_order_signal": -1.0}

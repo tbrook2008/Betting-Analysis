@@ -13,16 +13,19 @@ class ResultsGrader:
         
     def _map_prop_to_category(self, prop_type: str) -> str:
         s = prop_type.lower()
+        # MLB
         if "pitcher" in s and "strikeout" in s:
             return "pitcher_ks"
         if "home run" in s:
             return "home_runs"
         if "total base" in s:
             return "total_bases"
-        if "single" in s:
-            return "singles"
-        if "hit" in s: 
+        if "hit" in s and not any(x in s for x in ["points", "reb", "ast", "pra"]): 
             return "hits"
+        # NBA
+        if any(x in s for x in ["point", "rebound", "assist", "pts", "reb", "ast", "pra"]):
+            return f"nba_{s.replace(' ', '_')}"
+            
         return "hits" # fallback
         
     def _fetch_actual_result(self, pick: Any, date_str: str) -> float:
@@ -39,13 +42,13 @@ class ResultsGrader:
             
         return -1.0
         
-    def grade_date(self, date_str: str):
+    def grade_date(self, date_str: str, is_demo: bool = False):
         """Finds all ungraded entries for a date and grades them."""
-        entries = self.tracker.get_entries(date=date_str, graded=False)
+        entries = self.tracker.get_entries(date=date_str, graded=False, is_demo=is_demo)
         
         payouts = {
-            'power_2': 3.0, 'power_3': 5.0, 'power_4': 10.0, 'power_5': 20.0, 'power_6': 25.0,
-            'flex_3': 2.25, 'flex_4': 5.0, 'flex_5': 10.0, 'flex_6': 25.0
+            'power_2': 3.0, 'power_3': 5.0, 'power_4': 10.0, 'power_5': 5.5, 'power_6': 40.0,
+            'flex_3': 2.25, 'flex_4': 5.0, 'flex_5': 4.0, 'flex_6': 27.0
         }
         
         graded_count = 0

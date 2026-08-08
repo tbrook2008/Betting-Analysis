@@ -73,10 +73,34 @@ class BankrollManager:
             
         return current_bankroll * final_fraction
 
+    def simulate_optimal_cap(self, current_bankroll: float, entry_type: str = 'flex_6') -> float:
+        """
+        Dynamically compute a safe cap for small bankrolls based on insights from
+        Monte Carlo simulation of 6-leg Flex with goblin payouts (4x, 1.25x, 0.4x).
+        Simulation shows an optimal Kelly fraction of ~6.3% at a 72% hit rate.
+        For a $22 bankroll, a $3 min bet is ~13.6%. We adjust the type cap dynamically 
+        so that small bankrolls aren't entirely blocked by strict fractional sizing,
+        while gracefully capping it.
+        """
+        if current_bankroll <= 0:
+            return 0.0
+            
+        min_bet_pct = 3.0 / current_bankroll
+        
+        if entry_type in ('flex_6', 'flex_5'):
+            # Allow up to 20% normally, but if min bet needs more (like 13.6% for $22),
+            # give enough headroom so a mathematically sound entry doesn't get blocked.
+            # We cap the headroom at 25% to avoid pure ruin.
+            return max(0.20, min(min_bet_pct * 1.2, 0.25))
+        elif entry_type in ('flex_3', 'flex_4'):
+            return 0.12
+        else:
+            return 0.05
+
     def get_recommended_entry_size(self, entry: Dict[str, Any], current_bankroll: float) -> float:
         """
         v5.1: Entry-type-aware Kelly sizing.
-        Flex-6 gets up to 20% of bankroll (proven biggest profit driver).
+        Flex-6 gets dynamically computed cap (proven biggest profit driver).
         Power-2/3 are hard-capped at 5% (historically unprofitable).
         """
         entry_type = entry.get('entry_type', '')
@@ -84,18 +108,25 @@ class BankrollManager:
         payout = entry.get('payout_multiplier', 0)
         
         # ── [v5.1 Fix 2] Type-aware Kelly cap ────────────────────────────────
-        if entry_type in ('flex_6', 'flex_5'):
-            type_cap = 0.20  # Up to 20% of bankroll — this is our money-maker
-        elif entry_type in ('flex_3', 'flex_4'):
-            type_cap = 0.12
-        else:
-            type_cap = 0.05  # Hard cap for all Power entries (historically losers)
+        type_cap = self.simulate_optimal_cap(current_bankroll, entry_type)
         
         kelly_size = self.calculate_kelly_size(win_prob, payout, current_bankroll)
         # Blend Kelly with type cap: take the lesser of the two
         capped_size = min(kelly_size, current_bankroll * type_cap)
-        recommended_size = max(round(capped_size), 3.0)  # PrizePicks Minimum is $3
         
+        # Gracefully cap it: if the size is mathematically sound but small, 
+        # allow the minimum $3 bet, unless the cap completely blocks it.
+        if capped_size <= 0:
+            recommended_size = 0.0
+        elif capped_size < 3.0:
+            # If the max allowable percentage for this entry type is still < $3, block the bet
+            if (current_bankroll * type_cap) < 3.0:
+                recommended_size = 0.0
+            else:
+                recommended_size = 3.0
+        else:
+            recommended_size = round(capped_size)
+            
         return float(recommended_size)
 
     def check_risk_limits(self, portfolio: List[Dict[str, Any]], current_bankroll: float) -> List[Dict[str, Any]]:

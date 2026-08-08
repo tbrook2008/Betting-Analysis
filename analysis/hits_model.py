@@ -22,6 +22,7 @@ log = get_logger(__name__)
 
 def generate_hits_signals(
     player_name: str,
+    team_name: str,
     opp_pitcher_name: str,
     venue: str,
     pitcher_throws: str = "R",    # "L" or "R"
@@ -62,6 +63,19 @@ def generate_hits_signals(
             l10 = logs.tail(10)
             hits_in_l10 = (l10["H"] > 0).sum()
             signals["last_10_hit_rate"] = float(hits_in_l10 / 10.0)
+            
+            # Platoon/Bench Risk check
+            # Look at past 15 calendar days from the player's last played game (or today)
+            # Find how many games they played vs team's recent cadence. 
+            # Simple approx: if they have < 8 games logged in the past 14 days, they're part-time.
+            # For exactness, just check how many of their last 15 logs were within the last 15 days.
+            import datetime
+            fifteen_days_ago = (datetime.date.today() - datetime.timedelta(days=15)).strftime("%Y-%m-%d")
+            recent_games = logs[logs["date"] >= fifteen_days_ago]
+            if len(recent_games) < 9 and len(logs) >= 9:
+                signals["platoon_risk"] = -1.0
+            else:
+                signals["platoon_risk"] = 1.0
 
     # ── 3. Handedness split ──────────────────────────────────────────────────
     if player_id:
@@ -74,6 +88,18 @@ def generate_hits_signals(
     # ── 4. Park hit factor (use run factor as proxy) ─────────────────────────
     park_factor = mlb.get_park_run_factor(venue)
     signals["park_hit_factor"] = park_factor
+    
+    # ── Game Simulation for PA Multiplier ────────────────────────────────────
+    pa_multiplier = 1.0
+    try:
+        from analysis.game_simulator import simulate_plate_appearances
+        pa_multiplier = simulate_plate_appearances(player_name, team_name, venue, park_factor)
+    except Exception as exc:
+        log.debug(f"Game simulation skipped/failed: {exc}")
+    
+    # Calculate a base projection assuming 4 At-Bats, multiplied by pa_multiplier
+    base_avg = signals.get("rolling_avg_14") or signals.get("rolling_avg_30") or 0.250
+    signals["projected_value"] = (base_avg * 4.0) * pa_multiplier
 
     # ── 5. Opposing pitcher K% (inverse signal — high K% → fewer hits) ──────
     if opp_pitcher_id:
@@ -106,10 +132,17 @@ def generate_hits_signals(
     try:
         import datetime
         from data.lineup_client import get_lineup_signal
-        lineup_sigs = get_lineup_signal(player_name, datetime.date.today())
+        lineup_sigs = get_lineup_signal(player_name, team_name, datetime.date.today())
         signals.update(lineup_sigs)
     except Exception as exc:
         log.debug(f"Lineup signals skipped: {exc}")
+
+    # ── 8. Team Momentum Signal ───────────────────────────────────────────────
+    try:
+        momentum = mlb.get_team_momentum(team_name)
+        signals["team_momentum"] = momentum
+    except Exception as exc:
+        log.debug(f"Failed to get team momentum: {exc}")
 
     log.debug(f"Hits signals for {player_name}: {signals}")
     return signals
@@ -117,6 +150,7 @@ def generate_hits_signals(
 
 def generate_total_bases_signals(
     player_name: str,
+    team_name: str,
     opp_pitcher_name: str,
     venue: str,
     pitcher_throws: str = "R",
@@ -127,7 +161,7 @@ def generate_total_bases_signals(
     Signals for Total Bases prop. Extends hits signals with power metrics.
     """
     signals = generate_hits_signals(
-        player_name, opp_pitcher_name, venue,
+        player_name, team_name, opp_pitcher_name, venue,
         pitcher_throws, player_id, opp_pitcher_id
     )
 

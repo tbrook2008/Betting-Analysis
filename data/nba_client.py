@@ -78,3 +78,55 @@ def get_season_stats(player_id: int) -> dict:
         log.error(f"Failed to fetch season stats for {player_id}: {e}")
         return {}
 
+@cached(ttl=config.CACHE_TTL_GAME_LOGS, key_prefix="nba_stat_resolution")
+def get_player_stat_on_date(player_name: str, date: datetime.date, category: str) -> Optional[float]:
+    """
+    Resolve a specific stat for a player on a target date.
+    Used for grading/performance resolution.
+    """
+    player_id = get_player_id(player_name)
+    if not player_id:
+        return None
+
+    # Fetch logs (last 50 to be safe for late-season resolution)
+    logs = get_player_game_logs(player_id, last_n=50)
+    if logs.empty:
+        return None
+
+    # Date format in nba_api is 'Apr 17, 2026'
+    date_str = date.strftime("%b %d, %Y")
+    
+    # Filter for the specific game
+    game_row = logs[logs['GAME_DATE'] == date_str]
+    if game_row.empty:
+        log.warning(f"No game found for {player_name} on {date_str}")
+        return None
+
+    row = game_row.iloc[0]
+    cat = category.lower()
+    
+    # Support Combo Stats
+    if 'pts+rebs+asts' in cat or 'pra' in cat:
+        return float(row['PTS'] + row['REB'] + row['AST'])
+    if 'pts+rebs' in cat:
+        return float(row['PTS'] + row['REB'])
+    if 'pts+asts' in cat:
+        return float(row['PTS'] + row['AST'])
+    if 'rebs+asts' in cat:
+        return float(row['REB'] + row['AST'])
+    
+    # Support Single Stats
+    mapping = {
+        'points': 'PTS', 'pts': 'PTS',
+        'rebounds': 'REB', 'reb': 'REB',
+        'assists': 'AST', 'ast': 'AST',
+        'steals': 'STL', 'stl': 'STL',
+        'blocked shots': 'BLK', 'blk': 'BLK',
+        'turnovers': 'TOV',
+    }
+    
+    stat_col = mapping.get(cat)
+    if stat_col and stat_col in row:
+        return float(row[stat_col])
+        
+    return None

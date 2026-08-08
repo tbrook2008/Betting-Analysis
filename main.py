@@ -22,7 +22,7 @@ def cli():
 @cli.command()
 @click.option('--date', default="today", help='Date (YYYY-MM-DD)')
 @click.option('--min-confidence', default=60, help='Minimum confidence')
-@click.option('--bankroll', default=150.0, help='Current bankroll')
+@click.option('--bankroll', default=None, type=float, help='Current bankroll (overrides config)')
 @click.option('--risk', default='conservative', help='Risk tolerance')
 @click.option('--source', default=None, help='prizepicks | draftkings | all')
 @click.option('--sport', default='mlb', help='mlb | nba')
@@ -62,7 +62,38 @@ def run(date, min_confidence, bankroll, risk, source, sport):
         console.print("[yellow]⚠ No qualifying picks today.[/]")
         return
         
+    top_picks = [p.to_dict() for p in picks if getattr(p, 'confidence', 0) >= 75]
+    if top_picks:
+        from utils.gemini_client import vet_top_picks
+        with console.status("🧠 Gemini AI Expert Vetting in progress (batching top picks)..."):
+            ai_analysis = vet_top_picks(top_picks)
+            
+            console.print("\n[bold magenta]🤖 Gemini Expert Analysis:[/]")
+            approved_players = set()
+            for res in ai_analysis:
+                player = res.get("player_name")
+                status = res.get("status")
+                reason = res.get("reasoning")
+                if status == "APPROVED":
+                    console.print(f"[green]✅ {player}: {reason}[/]")
+                    approved_players.add(player)
+                else:
+                    console.print(f"[red]❌ {player} (REJECTED): {reason}[/]")
+            
+            if ai_analysis:
+                # Keep picks that were either APPROVED by Gemini, or weren't sent to Gemini (confidence < 75)
+                vetted_players = {res.get("player_name") for res in ai_analysis}
+                picks = [
+                    p for p in picks 
+                    if getattr(p, 'player_name', '') not in vetted_players 
+                    or getattr(p, 'player_name', '') in approved_players
+                ]
+            console.print("\n")
+        
     # Fix 4: Auto-read live bankroll from DB, using --bankroll as starting capital
+    from config import BANKROLL_CONFIG
+    if bankroll is None:
+        bankroll = BANKROLL_CONFIG.get('default_starting_bankroll', 150.0)
     tracker_pre = PerformanceTracker()
     live_bankroll = tracker_pre.get_current_bankroll(bankroll)
     if live_bankroll != bankroll:
@@ -101,7 +132,7 @@ def run(date, min_confidence, bankroll, risk, source, sport):
             
         tracker.log_entry(entry)
 
-    # Save to file
+    # Save/Merge to file
     out_path = Path("output") / f"entries_{actual_date.isoformat()}.json"
     Path("output").mkdir(exist_ok=True)
     
@@ -109,8 +140,21 @@ def run(date, min_confidence, bankroll, risk, source, sport):
         c = e.copy()
         c['picks'] = [getattr(p, 'to_dict', lambda: {})() for p in e['picks']]
         return c
-        
-    out_path.write_text(json.dumps([clean_entry(e) for e in portfolio], indent=2))
+    
+    current_portfolio = []
+    if out_path.exists():
+        try:
+            current_portfolio = json.loads(out_path.read_text())
+        except:
+            pass
+            
+    # Append and filter out duplicates by entry contents
+    for new_e in portfolio:
+        cleaned_new = clean_entry(new_e)
+        if cleaned_new not in current_portfolio:
+            current_portfolio.append(cleaned_new)
+            
+    out_path.write_text(json.dumps(current_portfolio, indent=2))
     console.print(f"\n[dim]✅ Entries saved → {out_path}[/]")
 
 @cli.command()
@@ -203,6 +247,45 @@ def serve(host, port):
     from api.app import app
     console.print(f"\n[bold cyan]🚀 Starting API server[/] at http://{host}:{port}")
     uvicorn.run(app, host=host, port=port, log_level="info")
+
+@cli.command()
+@click.option('--type', 'entry_type', required=True, help='e.g., power_3, flex_5')
+@click.option('--amount', type=float, required=True, help='Bet amount in dollars')
+@click.option('--picks', required=True, help='Comma-separated list of picks: Player:prop:line:OVER/UNDER')
+def log_entry(entry_type, amount, picks):
+    """Manually log a slip placed outside the system."""
+    from tracking.performance_tracker import PerformanceTracker
+    
+    parsed_picks = []
+    # Dummy class to mimic PickResult for the tracker
+    class ManualPick:
+        def __init__(self, name, prop, line, recommendation):
+            self.player_name = name
+            self.prop_type = prop
+            self.line = float(line)
+            self.recommendation = recommendation
+            self.confidence = 75 # default
+            
+    for pick_str in picks.split(','):
+        parts = pick_str.split(':')
+        if len(parts) == 4:
+            parsed_picks.append(ManualPick(parts[0].strip(), parts[1].strip(), parts[2].strip(), parts[3].strip().upper()))
+        else:
+            console.print(f"[red]Invalid pick format: {pick_str}[/]")
+            return
+            
+    entry_data = {
+        'entry_type': entry_type,
+        'entry_amount': amount,
+        'picks': parsed_picks,
+        'win_probability': 0.0,
+        'ev': 0.0,
+        'correlation_score': 0.0
+    }
+    
+    tracker = PerformanceTracker()
+    entry_id = tracker.log_entry(entry_data, is_demo=False)
+    console.print(f"[bold green]✅ Manual entry logged successfully![/] (ID: {entry_id})")
 
 def __parse_sources(source: str | None) -> list[str] | None:
     if not source: return None

@@ -49,6 +49,7 @@ class PickResult:
     source: str                  # "PrizePicks" | "DraftKings"
     game_time: str
     prop_type_key: str           # internal key: "hits", "home_runs", etc.
+    odds_type: str = "standard"  # "standard" | "goblin" | "demon"
     signal_contributions: dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -249,6 +250,7 @@ def _evaluate_row(row: dict, prop_key: str, game_ctx: dict, odds_lookup: dict, s
     prop_label = str(row.get("prop_type", "Unknown"))
     source = str(row.get("source", "PrizePicks"))
     game_time = str(row.get("game_time", ""))
+    odds_type = str(row.get("odds_type", "standard")).lower()
 
     # ── [ROUTE] NBA Path
     if sport == "nba":
@@ -268,6 +270,7 @@ def _evaluate_row(row: dict, prop_key: str, game_ctx: dict, odds_lookup: dict, s
             line=line, recommendation=result.recommendation, confidence=result.confidence,
             reasoning=result.reasoning, source=source, game_time=game_time,
             prop_type_key="nba_" + prop_label.lower().replace(" ", "_"),
+            odds_type=odds_type,
             signal_contributions=result.signal_contributions,
         )
 
@@ -292,6 +295,7 @@ def _evaluate_row(row: dict, prop_key: str, game_ctx: dict, odds_lookup: dict, s
     if prop_key == "hits":
         signals = generate_hits_signals(
             player_name=player_name,
+            team_name=team,
             opp_pitcher_name=opp_pitcher_name,
             venue=venue,
             pitcher_throws=pitcher_throws,
@@ -300,6 +304,7 @@ def _evaluate_row(row: dict, prop_key: str, game_ctx: dict, odds_lookup: dict, s
     elif prop_key == "total_bases":
         signals = generate_total_bases_signals(
             player_name=player_name,
+            team_name=team,
             opp_pitcher_name=opp_pitcher_name,
             venue=venue,
             pitcher_throws=pitcher_throws,
@@ -308,6 +313,7 @@ def _evaluate_row(row: dict, prop_key: str, game_ctx: dict, odds_lookup: dict, s
     elif prop_key == "home_runs":
         signals = generate_hr_signals(
             player_name=player_name,
+            team_name=team,
             opp_pitcher_name=opp_pitcher_name,
             venue=venue,
             opp_pitcher_id=opp_pitcher_id,
@@ -322,6 +328,9 @@ def _evaluate_row(row: dict, prop_key: str, game_ctx: dict, odds_lookup: dict, s
 
     if not signals:
         return None
+
+    # Extract projected value if the model generated one
+    projected_value = signals.pop("projected_value", None)
 
     # ── Score ────────────────────────────────────────────────────────────────
     # Inject odds into signals for the scorer
@@ -347,6 +356,7 @@ def _evaluate_row(row: dict, prop_key: str, game_ctx: dict, odds_lookup: dict, s
         source=source,
         game_time=game_time,
         prop_type_key=prop_key,
+        odds_type=odds_type,
         signal_contributions=result.signal_contributions,
     )
 

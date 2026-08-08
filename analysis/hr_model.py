@@ -21,6 +21,7 @@ log = get_logger(__name__)
 
 def generate_hr_signals(
     player_name: str,
+    team_name: str,
     opp_pitcher_name: str,
     venue: str,
     wind_speed_mph: float = 0.0,
@@ -106,7 +107,12 @@ def generate_hr_signals(
             signals["opp_hr_per_9"] = round((hr / ip) * 9, 2) if ip > 0 else 1.0
 
     # ── 5. Park HR factor ────────────────────────────────────────────────────
-    signals["park_hr_factor"] = mlb.get_park_hr_factor(venue)
+    park_factor = mlb.get_park_hr_factor(venue)
+    signals["park_hr_factor"] = park_factor
+    
+    # Calculate a base projection assuming 4 At-Bats, multiplied by park factor
+    base_hr_rate = signals.get("hr_rate_30d") or signals.get("hr_rate_15d") or 3.0
+    signals["projected_value"] = ((base_hr_rate / 100.0) * 4.0) * park_factor
 
     # ── 6. Wind boost ────────────────────────────────────────────────────────
     # Simple linear boost: 10 mph out = +0.05 factor, 10 mph in = -0.05
@@ -115,6 +121,17 @@ def generate_hr_signals(
         signals["wind_boost"] = round(direction_mult * min(wind_speed_mph / 20.0, 0.15), 3)
     else:
         signals["wind_boost"] = 0.0
+    # ── 7. Team Momentum & Platoon Risk ──────────────────────────────────────
+    try:
+        from data.lineup_client import get_lineup_signal
+        import datetime
+        lineup_sigs = get_lineup_signal(player_name, team_name, datetime.date.today())
+        signals.update(lineup_sigs)
+        
+        momentum = mlb.get_team_momentum(team_name)
+        signals["team_momentum"] = momentum
+    except Exception as exc:
+        log.debug(f"Failed to get momentum/lineup for HR: {exc}")
 
     log.debug(f"HR signals for {player_name}: {signals}")
     return signals

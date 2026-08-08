@@ -80,6 +80,8 @@ _SIGNAL_RANGES: dict[str, tuple[float, float, bool]] = {
     "wind_factor":         (-0.5,  0.5,   False),
     "bullpen_fatigue":     (0.0,   15.0,  False),     # more fatigue = more O runs
     "hr_per_9":            (0.5,   2.0,   True),      # for pitcher props
+    "team_momentum":       (-1.0,  1.0,   False),     # from mlb_client 5-day tracker
+    "platoon_risk":        (-1.0,  1.0,   False),     # -1 if risk, 1 if regular
     
     # NBA Ranges
     "l5_hit_rate":         (0.0,   1.0,   False),

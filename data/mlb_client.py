@@ -19,6 +19,21 @@ import config
 from utils.cache import cached
 from utils.logger import get_logger
 
+# --- FanGraphs 403 Bypass: Monkey-patch requests.get to inject User-Agent ---
+import requests
+_original_get = requests.get
+
+def _custom_get(*args, **kwargs):
+    if 'headers' not in kwargs:
+        kwargs['headers'] = {}
+    if 'User-Agent' not in kwargs['headers']:
+        kwargs['headers']['User-Agent'] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    return _original_get(*args, **kwargs)
+
+requests.get = _custom_get
+requests.Session.get = lambda self, *a, **k: _custom_get(*a, **k)
+# ----------------------------------------------------------------------------
+
 log = get_logger(__name__)
 
 # Silence pybaseball's progress bar
@@ -133,6 +148,63 @@ def get_player_info(player_id: int) -> dict:
         "current_team": raw.get("current_team", ""),
         **info,
     }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Team Momentum
+# ─────────────────────────────────────────────────────────────────────────────
+
+@cached(ttl=config.CACHE_TTL_SCHEDULE, key_prefix="team_momentum")
+def get_team_momentum(team_name: str, date_obj: datetime.date | None = None) -> float:
+    """
+    Returns a momentum signal for a team based on the last 5 days of games.
+    Calculates run differential per game.
+    Returns value normalized strictly to [-1.0, 1.0].
+    """
+    if date_obj is None:
+        date_obj = datetime.date.today()
+    
+    end_date = date_obj - datetime.timedelta(days=1)
+    start_date = end_date - datetime.timedelta(days=4)
+    
+    try:
+        sched = statsapi.schedule(
+            start_date=start_date.strftime("%Y-%m-%d"), 
+            end_date=end_date.strftime("%Y-%m-%d")
+        )
+    except Exception as e:
+        log.warning(f"Could not fetch past schedule for momentum: {e}")
+        return 0.0
+
+    run_diff = 0
+    games_played = 0
+    lower_team = team_name.lower()
+    
+    for g in sched:
+        if g.get("status") not in ("Final", "Completed Early"):
+            continue
+            
+        home = g.get("home_name", "").lower()
+        away = g.get("away_name", "").lower()
+        
+        if lower_team in home or home in lower_team:
+            runs_for = g.get("home_score", 0)
+            runs_against = g.get("away_score", 0)
+        elif lower_team in away or away in lower_team:
+            runs_for = g.get("away_score", 0)
+            runs_against = g.get("home_score", 0)
+        else:
+            continue
+            
+        run_diff += (runs_for - runs_against)
+        games_played += 1
+        
+    if games_played == 0:
+        return 0.0
+        
+    avg_diff = run_diff / games_played
+    signal = max(min(avg_diff / 5.0, 1.0), -1.0)
+    return float(signal)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

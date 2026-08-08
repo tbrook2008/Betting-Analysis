@@ -129,6 +129,7 @@ def _parse_prizepicks_response(payload: dict) -> pd.DataFrame:
             "game_time": game_info.get("start_time", ""),
             "opponent": opponent,
             "is_promo": bool(attrs.get("is_promo", False)),
+            "odds_type": attrs.get("odds_type", "standard"),
             "projection_id": proj.get("id", ""),
         })
 

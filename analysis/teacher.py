@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Dict, List, Any
 
 from data import mlb_client as mlb
+from data import nba_client as nba
 from utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -146,6 +147,13 @@ class Teacher:
 
     def _get_result(self, player_name: str, date: datetime.date, category: str) -> float | None:
         """Fetch the actual game stat for a player on a specific date."""
+        # ── NBA Branch ───────────────────────────────────────────────────────
+        if category.startswith("nba_"):
+            # strip 'nba_' prefix to get the raw stat category
+            stat_cat = category[4:]
+            return nba.get_player_stat_on_date(player_name, date, stat_cat)
+
+        # ── MLB Branch ───────────────────────────────────────────────────────
         p_id = mlb.get_player_id(player_name)
         if not p_id: return None
         
@@ -187,7 +195,10 @@ class Teacher:
         if "home run" in s: return "home_runs"
         if "total base" in s: return "total_bases"
         if "hit" in s: return "hits"
-        return "hits"
+        # NBA Keys
+        if any(x in s for x in ["point", "rebound", "assist", "pts", "reb", "ast", "pra"]):
+            return f"nba_{s.replace(' ', '_')}"
+        return s
 
 def get_multipliers() -> Dict[str, float]:
     """Helper for confidence_scorer.py."""

@@ -40,7 +40,7 @@ class DemoMode:
         for entry in portfolio:
             entry['recommended_size'] = manager.get_recommended_entry_size(entry, demo_bankroll)
             # Log to DB as demo
-            self.tracker.log_entry(entry, is_demo=True)
+            self.tracker.log_entry(entry, is_demo=True, date_override=date_str)
             
         # ── v4.0: Save raw picks so Teacher can learn even from 0 portfolio slates ────
         import json

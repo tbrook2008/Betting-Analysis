@@ -53,27 +53,31 @@ MAX_CONFIDENCE: int = 95          # Cap to avoid overconfidence
 # Signal Weights — Hits / Total Bases Model
 # ─────────────────────────────────────────────────────────────────────────────
 HITS_WEIGHTS = {
-    "rolling_avg_7":       0.25,
+    "rolling_avg_7":       0.20,
     "rolling_avg_14":      0.15,
-    "rolling_avg_30":      0.10,
+    "rolling_avg_30":      0.05,
     "handedness_split":    0.15,
-    "hard_hit_pct":        0.15,   # [NEW] Add dynamic Statcast factor
-    "park_hit_factor":     0.10,
-    "opp_pitcher_k_pct":   0.10,
+    "hard_hit_pct":        0.15,
+    "park_hit_factor":     0.05,
+    "opp_pitcher_k_pct":   0.05,
+    "team_momentum":       0.05,
+    "platoon_risk":        0.15,
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Signal Weights — Home Run Model
 # ─────────────────────────────────────────────────────────────────────────────
 HR_WEIGHTS = {
-    "barrel_pct":          0.20,   # Reduced from 0.30
-    "hard_hit_pct":        0.15,   # Reduced from 0.20
-    "hr_rate_30d":         0.15,   # [NEW] Recency signal
-    "hr_rate_15d":         0.10,   # [NEW] Near-term surge
-    "fly_ball_pct":        0.15,
-    "opp_hr_per_9":        0.15,   # Reduced from 0.20
+    "barrel_pct":          0.20,
+    "hard_hit_pct":        0.15,
+    "hr_rate_30d":         0.10,
+    "hr_rate_15d":         0.10,
+    "fly_ball_pct":        0.10,
+    "opp_hr_per_9":        0.10,
     "park_hr_factor":      0.05,
     "wind_boost":          0.05,
+    "team_momentum":       0.05,
+    "platoon_risk":        0.10,
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -228,7 +232,7 @@ PRIZEPICKS_CONFIG = {
 }
 
 BANKROLL_CONFIG = {
-    'default_starting_bankroll': 150,
+    'default_starting_bankroll': 50,
     'risk_tolerance': 'conservative',  # 'conservative', 'moderate', 'aggressive'
     'kelly_fraction': 0.20,             # Reduced from 0.25 for real-money buffer
     'max_daily_risk_pct': 15,          # Reduced from 20%
